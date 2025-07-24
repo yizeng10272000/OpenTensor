@@ -1,6 +1,7 @@
 import os
 import time
 import yaml
+import glob
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -57,10 +58,16 @@ def run_opentensor(use_projection=True):
     print(f"[{run_name}] ✅ Training done in {train_time/60:.2f} mins")
 
     # === 2) Infer ===
-    # Figure out where the model is saved
-    ckpt_path = f"./exp/{run_name}/latest.pth"
-    if not os.path.exists(ckpt_path):
-        ckpt_path = f"./exp/{run_name}/ckpt/latest.pth"
+    # === Automatically find the latest random ID subfolder ===
+    exp_base = f"./exp/{run_name}"
+    all_subdirs = [os.path.join(exp_base, d) for d in os.listdir(exp_base)
+                   if os.path.isdir(os.path.join(exp_base, d))]
+
+    if not all_subdirs:
+        raise ValueError(f"❌ Cannot find subfolders in {exp_base}")
+
+    latest_subdir = max(all_subdirs, key=os.path.getmtime)
+    ckpt_path = os.path.join(latest_subdir, "ckpt", "latest.pth")
 
     assert os.path.exists(ckpt_path), f"❌ Checkpoint not found: {ckpt_path}"
 
@@ -82,18 +89,18 @@ if __name__ == "__main__":
     result2 = run_opentensor(use_projection=False)
 
     print("\n=== Final Comparison Summary ===")
-    print(f"{'Run':<18} {'Train(min)':<12} {'Infer(s)':<10} {'MCTS Steps':<10}")
+    print(f"{'Run':<20} {'Train(min)':<12} {'Infer(s)':<10} {'MCTS Steps':<10}")
     print("-" * 50)
     for res in [result1, result2]:
-        print(f"{res[0]:<18} {res[1]/60:<12.2f} {res[2]:<10.2f} {res[3]:<10}")
+        print(f"{res[0]:<20} {res[1]/60:<12.2f} {res[2]:<10.2f} {res[3]:<10}")
 
     # Ensure exp dir exists
     os.makedirs("./exp", exist_ok=True)
 
-    # Save CSV for easy plot/latex import
+    # Save CSV
     with open("./exp/compare_results.csv", "w") as f:
         f.write("Run,TrainTime(min),InferTime(s),MCTSSteps\n")
-        f.write(f"{result1[0]},{result1[1]/60:.2f},{result1[2]:.2f},{result1[3]}\n")
-        f.write(f"{result2[0]},{result2[1]/60:.2f},{result2[2]:.2f},{result2[3]}\n")
+        for res in [result1, result2]:
+            f.write(f"{res[0]},{res[1]/60:.2f},{res[2]:.2f},{res[3]}\n")
 
     print("\n✅ Comparison results saved to ./exp/compare_results.csv")
