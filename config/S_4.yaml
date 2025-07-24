@@ -56,9 +56,9 @@ net:
   inter_channel: 512
   out_channel: 8
 
-  # === Added for tensor projection ===
-  use_projection: true     # add projection
-  projection_dim: 16       # The projected dimension 
+  # compare.py add tensor projection dynamically.
+  # use_projection: true     
+  # projection_dim: 16       
 
 mcts:
   simulate_times: 20

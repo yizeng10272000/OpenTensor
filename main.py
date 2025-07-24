@@ -58,4 +58,9 @@ if __name__ == '__main__':
 
     elif mode == "infer":
         assert args.run_dir is not None, "Please specify --run_dir to the checkpoint you want to test!"
-        trainer.infer(resume=args.run_dir)
+        import time
+        t0 = time.time()
+        step_ct = trainer.infer(resume=args.run_dir)
+        t1 = time.time()
+        print(f"Infer done. Steps: {step_ct}, Time: {t1 - t0:.2f}s")
+
