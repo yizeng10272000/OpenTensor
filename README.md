@@ -19,6 +19,7 @@ All configurations should be contained in a YAML file. We provide some config te
 
 ```bash
 mkdir data
+mkdir exp
 python main.py --config ./config/S_4.yaml --mode generate_data
 ```
 
