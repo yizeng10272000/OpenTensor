@@ -5,6 +5,7 @@ from codes.env import Environment
 from codes.mcts import MCTS
 from codes.net import Net
 from codes.trainer import Trainer, Player
+from codes.seed_utils import set_random_seed
 
 def parse():
     parser = argparse.ArgumentParser(description="OpenTensor")
@@ -24,11 +25,14 @@ if __name__ == '__main__':
 
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
+    
+    # set the random seed
+    seed = kwargs.get("seed", 42)
+    set_random_seed(seed)
 
     # === Automatically pass projection parameters ===
-    # If projection is written in config, add it to net's kwargs
     if "projection_dim" in kwargs["net"]:
-        kwargs["net"]["use_projection"] = True  # Forced to open
+        kwargs["net"]["use_projection"] = True  
     else:
         kwargs["net"]["use_projection"] = False
 

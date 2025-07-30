@@ -80,15 +80,16 @@ if __name__ == "__main__":
     print("Starting OpenTensor Compare Run\n")
 
     results = []
-
-    # === With projection, test multiple projection_dim values ===
-    for dim in range(16, 65, 8):  # 16, 24, 32, 40, 48, 56, 64
-        result = run_opentensor(use_projection=True, projection_dim=dim)
-        results.append(result)
-
+    
     # === Without projection, only run once ===
     result_no_proj = run_opentensor(use_projection=False)
     results.append(result_no_proj)
+
+    # === With projection, test multiple projection_dim values ===
+#    for dim in range(16, 65, 8):  # 16, 24, 32, 40, 48, 56, 64
+#        result = run_opentensor(use_projection=True, projection_dim=dim)
+#        results.append(result)
+
 
     # === Print Summary ===
     print("\n=== Final Comparison Summary ===")

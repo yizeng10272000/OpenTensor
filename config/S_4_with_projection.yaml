@@ -1,3 +1,5 @@
+seed: 42
+
 trainer:
   T: 3
   S_size: 4
@@ -46,7 +48,7 @@ net:
   out_channel: 8
 
   use_projection: true         # Enable projection
-  projection_dim: 16           # Setting the projection dimensions
+  projection_dim: 32           # Setting the projection dimensions
 
 mcts:
   simulate_times: 20

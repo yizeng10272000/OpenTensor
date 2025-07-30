@@ -9,6 +9,8 @@
 #   exp_name: "debug"
 #   device: "cuda"
 
+seed: 42
+
 trainer:
   T: 3
   S_size: 4
