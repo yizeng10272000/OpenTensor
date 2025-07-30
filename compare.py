@@ -86,7 +86,7 @@ if __name__ == "__main__":
     results.append(result_no_proj)
 
     # === With projection, test multiple projection_dim values ===
-#    for dim in range(16, 65, 8):  # 16, 24, 32, 40, 48, 56, 64
+#    for dim in range(16, 61, 4):  # 16, 20, 24, 28, 32, 36, 40, 44, 48, 50, 56, 60
 #        result = run_opentensor(use_projection=True, projection_dim=dim)
 #        results.append(result)
 
