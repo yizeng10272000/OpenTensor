@@ -1,7 +1,6 @@
 import os
 import time
 import yaml
-import glob
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -12,29 +11,27 @@ from codes.trainer import Trainer
 def run_opentensor(use_projection=True, projection_dim=None):
     """
     Runs OpenTensor training + inference for either:
-    - with tensor projection (with specified projection_dim)
+    - with tensor projection (optionally with given projection_dim)
     - without tensor projection
     """
-
     # === Load config ===
     with open("./config/S_4.yaml", "r") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
 
-    # === Override projection settings ===
+    # === Override projection ===
     if use_projection:
-        assert projection_dim is not None, "Must specify projection_dim for with_projection"
+        run_name = f"with_projection_dim{projection_dim}"
         kwargs["net"]["use_projection"] = True
         kwargs["net"]["projection_dim"] = projection_dim
-        run_name = f"with_projection_{projection_dim}"
     else:
+        run_name = "without_projection"
         kwargs["net"]["use_projection"] = False
         kwargs["net"].pop("projection_dim", None)
-        run_name = "without_projection"
 
-    # === Set experiment name ===
+    # === Update experiment name ===
     kwargs["trainer"]["exp_name"] = run_name
 
-    # === Check data exists ===
+    # === Check required data ===
     data_path = "./data/100000_S%dT%d_scalar3_filtered.npy" % (
         kwargs["env"]["S_size"], kwargs["env"]["T"]
     )
@@ -49,16 +46,19 @@ def run_opentensor(use_projection=True, projection_dim=None):
     # === 1) Train ===
     print(f"\n=== Training [{run_name}] ===")
     t0 = time.time()
-    trainer.learn(resume=None, example_path=data_path, self_example_path=None)
+    trainer.learn(
+        resume=None,
+        example_path=data_path,
+        self_example_path=None
+    )
     t1 = time.time()
     train_time = t1 - t0
     print(f"[{run_name}] ✅ Training done in {train_time/60:.2f} mins")
 
-    # === 2) Infer ===
+    # === 2) Inference ===
     exp_base = f"./exp/{run_name}"
     all_subdirs = [os.path.join(exp_base, d) for d in os.listdir(exp_base)
                    if os.path.isdir(os.path.join(exp_base, d))]
-
     if not all_subdirs:
         raise ValueError(f"❌ Cannot find subfolders in {exp_base}")
 
@@ -73,30 +73,35 @@ def run_opentensor(use_projection=True, projection_dim=None):
     infer_time = t3 - t2
     print(f"[{run_name}] ✅ Inference done in {infer_time:.2f}s | MCTS steps: {steps}")
 
-    return (run_name, train_time, infer_time, steps)
+    return (run_name, projection_dim, train_time, infer_time, steps)
 
 
 if __name__ == "__main__":
-    print("Starting OpenTensor Projection Comparison Run\n")
+    print("Starting OpenTensor Compare Run\n")
 
-    # Ensure exp dir exists
+    results = []
+
+    # === With projection, test multiple projection_dim values ===
+    for dim in range(16, 65, 8):  # 16, 24, 32, 40, 48, 56, 64
+        result = run_opentensor(use_projection=True, projection_dim=dim)
+        results.append(result)
+
+    # === Without projection, only run once ===
+    result_no_proj = run_opentensor(use_projection=False)
+    results.append(result_no_proj)
+
+    # === Print Summary ===
+    print("\n=== Final Comparison Summary ===")
+    print(f"{'Run':<30} {'ProjDim':<10} {'Train(min)':<12} {'Infer(s)':<10} {'MCTS Steps':<10}")
+    print("-" * 70)
+    for res in results:
+        print(f"{res[0]:<30} {str(res[1]):<10} {res[2]/60:<12.2f} {res[3]:<10.2f} {res[4]:<10}")
+
+    # === Save results to CSV ===
     os.makedirs("./exp", exist_ok=True)
-
-    # Prepare CSV file
-    result_path = "./exp/compare_results.csv"
-    with open(result_path, "w") as f:
+    with open("./exp/compare_results.csv", "w") as f:
         f.write("Run,ProjectionDim,TrainTime(min),InferTime(s),MCTSSteps\n")
-        
-    # Run without projection once
-    result = run_opentensor(use_projection=False)
-    with open(result_path, "a") as f:
-        f.write(f"{result[0]},NA,{result[1]/60:.2f},{result[2]:.2f},{result[3]}\n")
+        for res in results:
+            f.write(f"{res[0]},{res[1]},{res[2]/60:.2f},{res[3]:.2f},{res[4]}\n")
 
-    # Run with projection for various dimensions
-    for proj_dim in range(16, 65, 8):  # 16, 24, 32, 40, 48， 56， 64
-        result = run_opentensor(use_projection=True, projection_dim=proj_dim)
-        with open(result_path, "a") as f:
-            f.write(f"{result[0]},{proj_dim},{result[1]/60:.2f},{result[2]:.2f},{result[3]}\n")
-
-
-    print("\n✅ All results saved to ./exp/compare_results.csv")
+    print("\n✅ Comparison results saved to ./exp/compare_results.csv")
