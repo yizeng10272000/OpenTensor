@@ -448,7 +448,7 @@ class Net(nn.Module):
                  inter_channel=512,
                  out_channel=8,
                  use_projection=False,  # === MODIFIED ===
-                 projection_dim=16,     # === MODIFIED ===
+                 projection_dim=32,     # === MODIFIED ===
                  **kwargs):
         '''
         Initialization section
