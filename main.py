@@ -5,7 +5,8 @@ from codes.env import Environment
 from codes.mcts import MCTS
 from codes.net import Net
 from codes.trainer import Trainer, Player
-from codes.seed_utils import set_random_seed
+from codes.utils.seed_utils import set_random_seed
+
 
 def parse():
     parser = argparse.ArgumentParser(description="OpenTensor")

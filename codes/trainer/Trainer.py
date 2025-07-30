@@ -102,7 +102,35 @@ class Trainer():
         self.self_play_device = self_play_device
         self.net.to(device)
         self.all_kwargs = all_kwargs
-    
+        
+        # Initialize training related indicators
+        self.final_train_loss = None
+        self.train_steps = 0
+        self.peak_train_memory_MB = None
+
+        # Reasoning-related metrics
+        self.peak_infer_memory_MB = None
+
+    def save_model(self, filename, step):
+        save_path = os.path.join(self.save_dir, filename)
+        torch.save({
+            'model_state_dict': self.net.state_dict(),
+            'optimizer_a_state_dict': self.optimizer_a.state_dict(),
+            'optimizer_v_state_dict': self.optimizer_v.state_dict(),
+            'step': step
+        }, save_path)
+        print(f"Model saved to {save_path}")
+
+    def load_model(self, path, only_weight=False):
+        checkpoint = torch.load(path, map_location=self.device)
+        self.net.load_state_dict(checkpoint['model_state_dict'])
+        if not only_weight:
+            self.optimizer_a.load_state_dict(checkpoint['optimizer_a_state_dict'])
+            self.optimizer_v.load_state_dict(checkpoint['optimizer_v_state_dict'])
+        step = checkpoint.get('step', 0)
+        print(f"Model loaded from {path}, step={step}")
+        return step    
+
     
     def generate_synthetic_examples(self,
                                     prob=[.8, .1, .1],
@@ -263,6 +291,10 @@ class Trainer():
         '''
         The main function of training
         '''
+        import torch
+        import time
+        from torch.utils.tensorboard import SummaryWriter
+
         optimizer_a = self.optimizer_a
         scheduler_a = self.scheduler_a
         optimizer_v = self.optimizer_v
@@ -270,42 +302,41 @@ class Trainer():
         batch_size = self.batch_size
         self_play_freq = self.self_play_freq
         self_play_buffer = self.self_play_buffer
-        
+
         # Tensorboard.
-        os.makedirs(self.save_dir)
-        os.makedirs(self.log_dir)
+        os.makedirs(self.save_dir, exist_ok=True)
+        os.makedirs(self.log_dir, exist_ok=True)
         self.log_writer = SummaryWriter(self.log_dir)
-        
+
         # Save config.
         all_kwargs = self.all_kwargs
         cfg_path = os.path.join(self.save_dir, "config.yaml")
         with open(cfg_path, 'w') as f:
             yaml.dump(all_kwargs, f)
-        
+
         if resume is not None:
             # Load model.
             old_iter = self.load_model(resume, only_weight)
             # Copy log file.
             old_exp_dir = os.path.join(os.path.dirname(resume), '..')
-            # os.system("cp -r %s %s" % (os.path.join(old_exp_dir, 'log', '*'), self.log_dir))
             for log_f in os.listdir(os.path.join(old_exp_dir, "log")):
                 shutil.copy(os.path.join(old_exp_dir, "log", log_f), self.log_dir)
         else:
             old_iter = 0
-            
-        # Save ckpt.
+
+        # Save initial checkpoint.
         ckpt_name = "latest.pth"
         self.save_model(ckpt_name, old_iter)
-        
+
         # 1. Get synthetic examples.
         if example_path is not None:
             self.synthetic_examples.extend(self.load_examples(example_path))
         else:
             self.synthetic_examples.extend(self.generate_synthetic_examples(samples_n=3000))
-            
+
         if self_example_path is not None:
             self.self_examples.extend(self.load_examples(self_example_path))
-        
+
         # Dataloader.
         dataset = TupleDataset(T=self.T,
                                S_size=self.S_size,
@@ -316,12 +347,19 @@ class Trainer():
         dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
         loader = iter(dataloader)
         epoch_ct = 0
-        
+
+        # Initialization of training statistics variables
+        total_loss_accum = 0.0
+        total_samples = 0
+
+        # Reset peak memory statistics
+        if self.device.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()
+
+        # Record training start time
+        train_start_time = time.time()
+
         for i in tqdm(range(old_iter, self.iters_n)):
-            
-            # 2. self-play for data.
-            # if i % self_play_freq == 0:
-            #     self.self_examples.extend(self.play(200 if i < 50000 else 800))
 
             try:
                 batch_example = next(loader)
@@ -333,58 +371,84 @@ class Trainer():
                         print("Detect new self-data!")
                         self.self_examples.extend(self_examples)
                         self.self_examples = self.self_examples[-self_play_buffer:]
-                        np.save(os.path.join(self.data_dir, "total_self_data.npy"), np.array(self.self_examples, dtype=object))  # Whole buffer.
+                        np.save(os.path.join(self.data_dir, "total_self_data.npy"), np.array(self.self_examples, dtype=object))
                         synthetic_examples_n = 2000 if i > 50000 else 100000
                         dataset = TupleDataset(T=self.T,
-                                            S_size=self.S_size,
-                                            N_steps=self.net.N_steps,
-                                            coefficients=self.coefficients,
-                                            self_data=self.self_examples,
-                                            synthetic_data=random.sample(self.synthetic_examples, synthetic_examples_n))
-                        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)  
-                    else:                  
+                                               S_size=self.S_size,
+                                               N_steps=self.net.N_steps,
+                                               coefficients=self.coefficients,
+                                               self_data=self.self_examples,
+                                               synthetic_data=random.sample(self.synthetic_examples, synthetic_examples_n))
+                        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=0)
+                    else:
                         print("No detect new self-data...")
-                    
+
                 loader = iter(dataloader)
                 batch_example = next(loader)
                 print("Epoch: %d finish." % epoch_ct)
                 epoch_ct += 1
 
-            # Multi-process optimization is performed here
-            # todo: When to update network parameters                     
+            # Optimizer clear
             optimizer_a.zero_grad()
             optimizer_v.zero_grad()
+
+            # Training single step
             loss, v_loss, a_loss = self.learn_one_batch(batch_example)
+
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.net.parameters(),
-                                          max_norm=self.grad_clip)
+            torch.nn.utils.clip_grad_norm_(self.net.parameters(), max_norm=self.grad_clip)
             optimizer_a.step()
             optimizer_v.step()
             scheduler_a.step()
             scheduler_v.step()
-            
-            # Add the logger section
+
+            # The accumulated loss is used to calculate the average training loss at the end
+            total_loss_accum += loss.item() * len(batch_example) 
+            total_samples += len(batch_example)
+
+            self.train_steps = i + 1
+
+            # Recording logs
             if i % 20 == 0:
-                # print("Loss: %f, v_loss: %f, a_loss: %f" %
-                #       (loss.detach().cpu().item(), v_loss.detach().cpu().item(), a_loss.detach().cpu().item()))
                 self.log_writer.add_scalar("loss", loss.detach().cpu().item(), global_step=i)
                 self.log_writer.add_scalar("v_loss", v_loss.detach().cpu().item(), global_step=i)
                 self.log_writer.add_scalar("a_loss", a_loss.detach().cpu().item(), global_step=i)
-            
+
             if i % self.save_freq == 0:
                 ckpt_name = "it%07d.pth" % i
                 self.save_model(ckpt_name, i)
-            
+
             if i % self.temp_save_freq == 0:
                 ckpt_name = "latest.pth"
                 self.save_model(ckpt_name, i)
-                
+
             if i % self.val_freq == 0:
                 val_episode = dataset[random.randint(0, len(dataset)-1)]
                 log_txt = self.val_one_episode(val_episode)
                 self.log_writer.add_text("Infer", log_txt, global_step=i)
-        
+
+        # After training, save the final model
         self.save_model("final.pth", i)
+
+        # Training end time
+        train_end_time = time.time()
+        self.train_time_sec = train_end_time - train_start_time
+
+        # Calculate the average training loss
+        self.final_train_loss = total_loss_accum / total_samples if total_samples > 0 else float('nan')
+
+        # Peak video memory for training, in MB
+        if self.device.startswith("cuda"):
+            peak_mem_bytes = torch.cuda.max_memory_allocated()
+            self.peak_train_memory_MB = peak_mem_bytes / (1024 ** 2)
+        else:
+            self.peak_train_memory_MB = "NA"
+
+        print(f"Training finished: total steps={self.train_steps}, "
+              f"final loss={self.final_train_loss:.6f}, "
+              f"train time={self.train_time_sec:.2f}s, "
+              f"peak train memory={self.peak_train_memory_MB} MB")
+
             
     
     def infer(self,
@@ -397,70 +461,99 @@ class Trainer():
               vis=False,
               noise=False,
               log=True):
-        
+
+        import torch
+        import time
+        from tqdm import tqdm
+        import numpy as np
+        import os
+
         log_actions = []
-        
+
         assert resume is not None, "No meaning for random init infer."
         self.load_model(resume)
+
         if log:
             exp_dir = os.path.join(os.path.dirname(resume), '..')
             infer_log_dir = os.path.join(exp_dir, "infer")
             os.makedirs(infer_log_dir, exist_ok=True)
-            infer_log_f = os.path.join(infer_log_dir, str(int(time.time()))+'.txt')
-        
+            infer_log_f = os.path.join(infer_log_dir, str(int(time.time())) + '.txt')
+
         net = self.net
         env = self.env
         mcts = self.mcts
-        
+
         env.reset(init_state, no_base_change)
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
         net.eval()
         mcts.reset(env.cur_state, simulate_times=mcts_simu_times, R_limit=step_limit)
         env.R_limit = step_limit + 1
-        
+
         step_ct = 0
+
+        # Reset the memory peak value before inference starts
+        if self.device.startswith("cuda"):
+            torch.cuda.reset_peak_memory_stats()
+
+        infer_start_time = time.time()
+
         for step in tqdm(range(step_limit)):
-            print("Current state is (step%d):" % step)
+            print(f"Current state is (step{step}):")
             print(env.cur_state)
-            
+
             action, actions, pi, log_txt = mcts(env.cur_state, net, log=True, noise=noise)
             if vis:
                 mcts.visualize()
-            print("We choose action(step%d):" % step)
+            print(f"We choose action(step{step}):")
             print(action)
-            terminate_flag = env.step(action)                            # Will change self.cur_state. 
-            mcts.move(action)                                            # Move MCTS forward.       
-            log_actions.append(action)   
-            
+            terminate_flag = env.step(action)  # Will change self.cur_state.
+            mcts.move(action)  # Move MCTS forward.
+            log_actions.append(action)
+
             if log:
                 with open(infer_log_f, "a") as f:
                     f.write(log_txt)
-                    f.write("\n\n\n")  
-                
+                    f.write("\n\n\n")
+
             if terminate_flag:
                 step_ct = step + 1
                 print("We get to the end!")
                 break
-                
-            
+
+        infer_end_time = time.time()
+
         print("Final result:")
         print(env.cur_state)
-        
+
         print("Actions are:")
         print(np.stack(log_actions, axis=0))
-        
+
         if log:
             with open(infer_log_f, "a") as f:
-                f.write("\n\n\n") 
+                f.write("\n\n\n")
                 f.write("\nFinal result:\n")
-                f.write("\n" + str(env.cur_state) + "\n") 
+                f.write("\n" + str(env.cur_state) + "\n")
                 f.write("\nActions are:\n")
                 f.write("\n" + str(np.stack(log_actions, axis=0)) + "\n")
-                f.write("\n\n\n")         
-                f.write("\nStep ct: %d\n" % step_ct)
-                
+                f.write("\n\n\n")
+                f.write(f"\nStep ct: {step_ct}\n")
+
+        # Record inference time
+        self.infer_time_sec = infer_end_time - infer_start_time
+
+        # Record the peak value of video memory, in MB
+        if self.device.startswith("cuda"):
+            peak_mem_bytes = torch.cuda.max_memory_allocated()
+            self.peak_infer_memory_MB = peak_mem_bytes / (1024 ** 2)
+        else:
+            self.peak_infer_memory_MB = "NA"
+
+        print(f"Inference finished: steps={step_ct}, time={self.infer_time_sec:.2f}s, peak memory={self.peak_infer_memory_MB} MB")
+
         return step_ct
+
+
         
         
     def filter_train_data(self,

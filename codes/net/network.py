@@ -19,7 +19,7 @@ from codes.utils import *
 
 class Torso(nn.Module):
     '''
-    网络躯干(Encoder).
+    Network trunk (Encoder).
     '''
     
     def __init__(self,
@@ -49,8 +49,8 @@ class Torso(nn.Module):
     def forward(self, x):
         
         # Input:
-        #   Tensors of shape of [B,T,S,S,S]. First one is current tensor. (numpy)
-        #   Scalars of shape of [B,s].                                    (numpy)
+        #   Tensors of shape of [B,T,S,S,S]. First one is current tensor. 
+        #   Scalars of shape of [B,s].                                    
         
         S_size = self.S_size
         T = self.T
@@ -100,8 +100,8 @@ class Torso(nn.Module):
 class AttentiveModes(nn.Module):
     
     '''
-    问题：
-        前向时, Attention模型是否共享参数?
+    Question:
+            Does the Attention model share parameters during forward pass?
     '''
     
     def __init__(self,
