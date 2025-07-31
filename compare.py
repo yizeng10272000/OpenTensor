@@ -11,38 +11,6 @@ from codes.net import Net
 from codes.trainer import Trainer
 
 
-def parse_infer_log(log_path):
-    """Extract Q, score, depth, number of actions, etc. from infer_log.txt"""
-    with open(log_path, 'r') as f:
-        lines = f.readlines()
-
-    Q_values, scores, depths, action_counts = [], [], [], []
-
-    for i, line in enumerate(lines):
-        if "Q:" in line:
-            Q_values += list(map(float, re.findall(r'-?\d+\.\d+', line)))
-        elif "scores:" in line:
-            scores += list(map(float, re.findall(r'-?\d+\.\d+', line)))
-        elif "depth=" in line:
-            match = re.search(r"depth=(\d+)", line)
-            if match:
-                depths.append(int(match.group(1)))
-        elif "Actions are:" in line:
-            count = 0
-            j = i + 1
-            while j < len(lines) and '[' in lines[j]:
-                count += 1
-                j += 1
-            action_counts.append(count)
-
-    return {
-        "mean_Q": np.mean(Q_values) if Q_values else "NA",
-        "mean_score": np.mean(scores) if scores else "NA",
-        "mean_depth": np.mean(depths) if depths else "NA",
-        "mean_action_count": np.mean(action_counts) if action_counts else "NA"
-    }
-
-
 def run_opentensor(use_projection=True, projection_dim=None):
     with open("./config/S_4.yaml", "r") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
@@ -99,18 +67,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
     peak_infer_mem = getattr(trainer, "peak_infer_memory_MB", "NA")
 
-    # === parse infer_log.txt ===
-    infer_log_path = os.path.join(latest_subdir, "infer_log.txt")
-    if os.path.exists(infer_log_path):
-        infer_stats = parse_infer_log(infer_log_path)
-    else:
-        infer_stats = {
-            "mean_Q": "NA",
-            "mean_score": "NA",
-            "mean_depth": "NA",
-            "mean_action_count": "NA"
-        }
-
     return {
         "run_name": run_name,
         "use_projection": use_projection,
@@ -118,18 +74,11 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "train_time_sec": train_time,
         "infer_time_sec": infer_time,
         "mcts_steps": steps,
-        "S_size": kwargs["env"]["S_size"],
-        "T": kwargs["env"]["T"],
-        "batch_size": kwargs["trainer"].get("batch_size", "NA"),
         "final_train_loss": final_train_loss,
         "train_steps": train_steps,
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
         "peak_infer_mem_MB": peak_infer_mem,
-        "mean_Q": infer_stats["mean_Q"],
-        "mean_score": infer_stats["mean_score"],
-        "mean_depth": infer_stats["mean_depth"],
-        "mean_action_count": infer_stats["mean_action_count"]
     }
 
 
@@ -150,23 +99,19 @@ if __name__ == "__main__":
     header = [
         "Run Name", "Use Projection", "Projection Dim",
         "Train Time (sec)", "Infer Time (sec)", "MCTS Steps",
-        "S_size", "T", "Batch Size",
-        "Final Train Loss", "Train Steps", "Peak Train Mem (MB)",
-        "Total Model Params", "Peak Infer Mem (MB)",
-        "Mean Q", "Mean Score", "Mean Depth", "Mean Action Count"
+        "Final Train Loss", "Peak Train Mem (MB)",
+        "Total Model Params", "Peak Infer Mem (MB)"
     ]
 
     print("\n=== Final Comparison Summary ===")
-    print(" | ".join(f"{h:<18}" for h in header))
+    print(" | ".join(f"{h:<20}" for h in header))
     print("-" * 180)
     for r in results:
         print(
-            f"{str(r.get('run_name', 'NA')):<18} | {str(r.get('use_projection', 'NA')):<15} | {str(r.get('projection_dim', 'NA')):<14} | "
-            f"{float(r.get('train_time_sec', 0)):<15.2f} | {float(r.get('infer_time_sec', 0)):<14.2f} | {str(r.get('mcts_steps', 'NA')):<10} | "
-            f"{str(r.get('S_size', 'NA')):<6} | {str(r.get('T', 'NA')):<3} | {str(r.get('batch_size', 'NA')):<10} | "
-            f"{str(r.get('final_train_loss', 'NA')):<16} | {str(r.get('train_steps', 'NA')):<11} | {str(r.get('peak_train_mem_MB', 'NA')):<17} | "
-            f"{str(r.get('total_model_params', 'NA')):<18} | {str(r.get('peak_infer_mem_MB', 'NA')):<17} | "
-            f"{str(r.get('mean_Q', 'NA')):<8} | {str(r.get('mean_score', 'NA')):<11} | {str(r.get('mean_depth', 'NA')):<11} | {str(r.get('mean_action_count', 'NA')):<16}"
+            f"{str(r['run_name']):<20} | {str(r['use_projection']):<15} | {str(r['projection_dim']):<14} | "
+            f"{r['train_time_sec']:<17.2f} | {r['infer_time_sec']:<16.2f} | {str(r['mcts_steps']):<12} | "
+            f"{str(r['final_train_loss']):<18} | {str(r['peak_train_mem_MB']):<20} | "
+            f"{str(r['total_model_params']):<20} | {str(r['peak_infer_mem_MB']):<20}"
         )
 
     os.makedirs("./exp", exist_ok=True)
@@ -181,18 +126,10 @@ if __name__ == "__main__":
                 "Train Time (sec)": f"{r['train_time_sec']:.2f}",
                 "Infer Time (sec)": f"{r['infer_time_sec']:.2f}",
                 "MCTS Steps": r["mcts_steps"],
-                "S_size": r["S_size"],
-                "T": r["T"],
-                "Batch Size": r["batch_size"],
                 "Final Train Loss": r["final_train_loss"],
-                "Train Steps": r["train_steps"],
                 "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                 "Total Model Params": r["total_model_params"],
-                "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
-                "Mean Q": r["mean_Q"],
-                "Mean Score": r["mean_score"],
-                "Mean Depth": r["mean_depth"],
-                "Mean Action Count": r["mean_action_count"]
+                "Peak Infer Mem (MB)": r["peak_infer_mem_MB"]
             })
 
     print("\n✅ Comparison results saved to ./exp/compare_results.csv")
