@@ -12,7 +12,7 @@
 seed: 42
 
 trainer:
-  T: 3
+  T: 7
   S_size: 4
   coefficients: 
     - 0
@@ -38,7 +38,7 @@ trainer:
   val_freq: 250
 
 net:
-  T: 3
+  T: 7
   S_size: 4
   coefficients: 
     - 0
