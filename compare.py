@@ -77,15 +77,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
 
 def parse_infer_txt_all_blocks(txt_path):
-    """
-    Parse the inference txt file to extract all Depth blocks information.
-    Returns a list of dictionaries, each containing keys: Depth, Scores, Q, Action Count (N).
-    """
-    with open(txt_path, "r", encoding="utf-8") as f:
-        content = f.read()
-
-    # Use regex to match all Depth sections
-    # Non-greedy match to capture each Depth block content (Depth: ... N: [...])
     pattern = re.compile(
         r"Depth:\s*\n\s*(\d+).*?"  # Depth number
         r"scores:\s*\n\s*\[([^\]]+)\].*?"  # scores array
@@ -94,28 +85,25 @@ def parse_infer_txt_all_blocks(txt_path):
         re.DOTALL
     )
 
+    with open(txt_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
     matches = pattern.findall(content)
     results = []
     for depth, scores, q, n in matches:
-        # Clean spaces for easier CSV writing
-        scores = " ".join(scores.split())
-        q = " ".join(q.split())
-        n = " ".join(n.split())
+        score_list = [s.strip() for s in scores.strip().split()]
+        q_list = [qv.strip() for qv in q.strip().split()]
+        n_list = [nv.strip() for nv in n.strip().split()]
         results.append({
             "Depth": depth,
-            "Scores": scores,
-            "Q": q,
-            "Action Count": n,
+            "Scores": score_list,
+            "Q": q_list,
+            "Action Count": n_list,
         })
-
     return results
 
 
 def read_infer_txt_records(latest_subdir):
-    """
-    Find inference txt files under latest_subdir/infer/, parse all blocks, return a list of dicts.
-    If no files found, return an empty list.
-    """
     infer_dir = os.path.join(latest_subdir, "infer")
     if not os.path.exists(infer_dir):
         return []
@@ -124,7 +112,6 @@ def read_infer_txt_records(latest_subdir):
     if not txt_files:
         return []
 
-    # Read only the first txt file by default; modify if multiple files need to be processed
     txt_path = os.path.join(infer_dir, txt_files[0])
     try:
         return parse_infer_txt_all_blocks(txt_path)
@@ -147,35 +134,28 @@ if __name__ == "__main__":
     #     res = run_opentensor(use_projection=True, projection_dim=dim)
     #     results.append(res)
 
-    header = [
-        "Run Name", "Use Projection", "Projection Dim",
-        "Train Time (sec)", "Infer Time (sec)",
-        "Final Train Loss", "Peak Train Mem (MB)",
-        "Total Model Params", "Peak Infer Mem (MB)",
-        "Depth", "Scores", "Q", "Action Count"
-    ]
-
-    print("\n=== Final Comparison Summary ===")
-    print(" | ".join(f"{h:<20}" for h in header[:-4]))
-    print("-" * 160)
-    for r in results:
-        print(
-            f"{str(r['run_name']):<20} | {str(r['use_projection']):<15} | {str(r['projection_dim']):<14} | "
-            f"{r['train_time_sec']:<17.2f} | {r['infer_time_sec']:<16.2f} | "
-            f"{str(r['final_train_loss']):<18} | {str(r['peak_train_mem_MB']):<20} | "
-            f"{str(r['total_model_params']):<20} | {str(r['peak_infer_mem_MB']):<20}"
-        )
+    max_len = 10  # 最大输出维度长度
+    header = (
+        ["Run Name", "Use Projection", "Projection Dim",
+         "Train Time (sec)", "Infer Time (sec)",
+         "Final Train Loss", "Peak Train Mem (MB)",
+         "Total Model Params", "Peak Infer Mem (MB)",
+         "Depth"]
+        + [f"Score_{i}" for i in range(max_len)]
+        + [f"Q_{i}" for i in range(max_len)]
+        + [f"Action Count_{i}" for i in range(max_len)]
+    )
 
     os.makedirs("./exp", exist_ok=True)
     with open("./exp/compare_results.csv", "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_ALL)
         writer.writeheader()
+
         for r in results:
             infer_records = read_infer_txt_records(r["latest_subdir"])
             if infer_records:
-                # Write one CSV row for each inference block, attaching run-related metrics
                 for rec in infer_records:
-                    writer.writerow({
+                    row = {
                         "Run Name": r["run_name"],
                         "Use Projection": r["use_projection"],
                         "Projection Dim": r["projection_dim"],
@@ -186,12 +166,15 @@ if __name__ == "__main__":
                         "Total Model Params": r["total_model_params"],
                         "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
                         "Depth": rec["Depth"],
-                        "Scores": rec["Scores"],
-                        "Q": rec["Q"],
-                        "Action Count": rec["Action Count"],
-                    })
+                    }
+
+                    for i in range(max_len):
+                        row[f"Score_{i}"] = rec["Scores"][i] if i < len(rec["Scores"]) else ""
+                        row[f"Q_{i}"] = rec["Q"][i] if i < len(rec["Q"]) else ""
+                        row[f"Action Count_{i}"] = rec["Action Count"][i] if i < len(rec["Action Count"]) else ""
+
+                    writer.writerow(row)
             else:
-                # If no inference blocks, write one row with empty inference fields
                 writer.writerow({
                     "Run Name": r["run_name"],
                     "Use Projection": r["use_projection"],
@@ -202,10 +185,7 @@ if __name__ == "__main__":
                     "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                     "Total Model Params": r["total_model_params"],
                     "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
-                    "Depth": "",
-                    "Scores": "",
-                    "Q": "",
-                    "Action Count": "",
+                    "Depth": ""
                 })
 
-    print("\n✅ Comparison results (including detailed inference blocks) saved to ./exp/compare_results.csv")
+    print("\n✅ Comparison results saved to ./exp/compare_results.csv with separated Scores, Q, and Action Count values.")
