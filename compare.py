@@ -134,7 +134,7 @@ if __name__ == "__main__":
     #     res = run_opentensor(use_projection=True, projection_dim=dim)
     #     results.append(res)
 
-    max_len = 10  # 最大输出维度长度
+    max_len = 5
     header = (
         ["Run Name", "Use Projection", "Projection Dim",
          "Train Time (sec)", "Infer Time (sec)",
