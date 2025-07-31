@@ -3,7 +3,6 @@ import time
 import yaml
 import csv
 import re
-import numpy as np
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -42,14 +41,11 @@ def run_opentensor(use_projection=True, projection_dim=None):
     t1 = time.time()
     train_time = t1 - t0
 
-    # Training-related indicators
     final_train_loss = getattr(trainer, "final_train_loss", "NA")
     peak_train_mem = getattr(trainer, "peak_train_memory_MB", "NA")
 
-    # Model parameter number
     total_params = sum(p.numel() for p in net.parameters())
 
-    # Reasoning
     exp_base = f"./exp/{run_name}"
     all_subdirs = [os.path.join(exp_base, d) for d in os.listdir(exp_base) if os.path.isdir(os.path.join(exp_base, d))]
     if not all_subdirs:
@@ -76,7 +72,65 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
         "peak_infer_mem_MB": peak_infer_mem,
+        "latest_subdir": latest_subdir,
     }
+
+
+def parse_infer_txt_all_blocks(txt_path):
+    """
+    Parse the inference txt file to extract all Depth blocks information.
+    Returns a list of dictionaries, each containing keys: Depth, Scores, Q, Action Count (N).
+    """
+    with open(txt_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # Use regex to match all Depth sections
+    # Non-greedy match to capture each Depth block content (Depth: ... N: [...])
+    pattern = re.compile(
+        r"Depth:\s*\n\s*(\d+).*?"  # Depth number
+        r"scores:\s*\n\s*\[([^\]]+)\].*?"  # scores array
+        r"Q:\s*\n\s*\[([^\]]+)\].*?"  # Q array
+        r"N:\s*\n\s*\[([^\]]+)\]",  # N array
+        re.DOTALL
+    )
+
+    matches = pattern.findall(content)
+    results = []
+    for depth, scores, q, n in matches:
+        # Clean spaces for easier CSV writing
+        scores = " ".join(scores.split())
+        q = " ".join(q.split())
+        n = " ".join(n.split())
+        results.append({
+            "Depth": depth,
+            "Scores": scores,
+            "Q": q,
+            "Action Count": n,
+        })
+
+    return results
+
+
+def read_infer_txt_records(latest_subdir):
+    """
+    Find inference txt files under latest_subdir/infer/, parse all blocks, return a list of dicts.
+    If no files found, return an empty list.
+    """
+    infer_dir = os.path.join(latest_subdir, "infer")
+    if not os.path.exists(infer_dir):
+        return []
+
+    txt_files = [f for f in os.listdir(infer_dir) if f.endswith(".txt")]
+    if not txt_files:
+        return []
+
+    # Read only the first txt file by default; modify if multiple files need to be processed
+    txt_path = os.path.join(infer_dir, txt_files[0])
+    try:
+        return parse_infer_txt_all_blocks(txt_path)
+    except Exception as e:
+        print(f"⚠️ Failed to parse {txt_path}: {e}")
+        return []
 
 
 if __name__ == "__main__":
@@ -84,11 +138,11 @@ if __name__ == "__main__":
 
     results = []
 
-    # without projection
+    # Run without projection
     result_no_proj = run_opentensor(use_projection=False)
     results.append(result_no_proj)
 
-    # with projection 
+    # Run with projection - uncomment if needed
     # for dim in range(16, 61, 4):
     #     res = run_opentensor(use_projection=True, projection_dim=dim)
     #     results.append(res)
@@ -97,12 +151,13 @@ if __name__ == "__main__":
         "Run Name", "Use Projection", "Projection Dim",
         "Train Time (sec)", "Infer Time (sec)",
         "Final Train Loss", "Peak Train Mem (MB)",
-        "Total Model Params", "Peak Infer Mem (MB)"
+        "Total Model Params", "Peak Infer Mem (MB)",
+        "Depth", "Scores", "Q", "Action Count"
     ]
 
     print("\n=== Final Comparison Summary ===")
-    print(" | ".join(f"{h:<20}" for h in header))
-    print("-" * 180)
+    print(" | ".join(f"{h:<20}" for h in header[:-4]))
+    print("-" * 160)
     for r in results:
         print(
             f"{str(r['run_name']):<20} | {str(r['use_projection']):<15} | {str(r['projection_dim']):<14} | "
@@ -112,20 +167,45 @@ if __name__ == "__main__":
         )
 
     os.makedirs("./exp", exist_ok=True)
-    with open("./exp/compare_results.csv", "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=header)
+    with open("./exp/compare_results.csv", "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=header, quoting=csv.QUOTE_ALL)
         writer.writeheader()
         for r in results:
-            writer.writerow({
-                "Run Name": r["run_name"],
-                "Use Projection": r["use_projection"],
-                "Projection Dim": r["projection_dim"],
-                "Train Time (sec)": f"{r['train_time_sec']:.2f}",
-                "Infer Time (sec)": f"{r['infer_time_sec']:.2f}",
-                "Final Train Loss": r["final_train_loss"],
-                "Peak Train Mem (MB)": r["peak_train_mem_MB"],
-                "Total Model Params": r["total_model_params"],
-                "Peak Infer Mem (MB)": r["peak_infer_mem_MB"]
-            })
+            infer_records = read_infer_txt_records(r["latest_subdir"])
+            if infer_records:
+                # Write one CSV row for each inference block, attaching run-related metrics
+                for rec in infer_records:
+                    writer.writerow({
+                        "Run Name": r["run_name"],
+                        "Use Projection": r["use_projection"],
+                        "Projection Dim": r["projection_dim"],
+                        "Train Time (sec)": f"{r['train_time_sec']:.2f}",
+                        "Infer Time (sec)": f"{r['infer_time_sec']:.2f}",
+                        "Final Train Loss": r["final_train_loss"],
+                        "Peak Train Mem (MB)": r["peak_train_mem_MB"],
+                        "Total Model Params": r["total_model_params"],
+                        "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
+                        "Depth": rec["Depth"],
+                        "Scores": rec["Scores"],
+                        "Q": rec["Q"],
+                        "Action Count": rec["Action Count"],
+                    })
+            else:
+                # If no inference blocks, write one row with empty inference fields
+                writer.writerow({
+                    "Run Name": r["run_name"],
+                    "Use Projection": r["use_projection"],
+                    "Projection Dim": r["projection_dim"],
+                    "Train Time (sec)": f"{r['train_time_sec']:.2f}",
+                    "Infer Time (sec)": f"{r['infer_time_sec']:.2f}",
+                    "Final Train Loss": r["final_train_loss"],
+                    "Peak Train Mem (MB)": r["peak_train_mem_MB"],
+                    "Total Model Params": r["total_model_params"],
+                    "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
+                    "Depth": "",
+                    "Scores": "",
+                    "Q": "",
+                    "Action Count": "",
+                })
 
-    print("\n✅ Comparison results saved to ./exp/compare_results.csv")
+    print("\n✅ Comparison results (including detailed inference blocks) saved to ./exp/compare_results.csv")
