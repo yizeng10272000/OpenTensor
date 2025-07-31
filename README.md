@@ -86,19 +86,4 @@ python main.py --config ./config/S_4_without_projection.yaml --mode infer --run_
 
 ---
 
-## Citing us
-
-If our work has been helpful to you, please feel free to cite us:
-
-```latex
-@article{sun2024opentensor,
-  title={OpenTensor: Reproducing Faster Matrix Multiplication Discovering Algorithms},
-  author={Sun, Yiwen and Li, Wenye},
-  journal={arXiv preprint arXiv:2405.20748},
-  year={2024}
-}
-```
-
----
-
 Thank you for using this project! Please feel free to open issues or contact us if you have any questions.
