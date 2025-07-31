@@ -60,7 +60,7 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
     print(f"\n=== Inference [{run_name}] ===")
     t2 = time.time()
-    steps = trainer.infer(resume=ckpt_path)
+    trainer.infer(resume=ckpt_path)
     t3 = time.time()
     infer_time = t3 - t2
 
@@ -72,7 +72,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "projection_dim": projection_dim if projection_dim is not None else "NA",
         "train_time_sec": train_time,
         "infer_time_sec": infer_time,
-        "mcts_steps": steps,
         "final_train_loss": final_train_loss,
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
@@ -96,7 +95,7 @@ if __name__ == "__main__":
 
     header = [
         "Run Name", "Use Projection", "Projection Dim",
-        "Train Time (sec)", "Infer Time (sec)", "MCTS Steps",
+        "Train Time (sec)", "Infer Time (sec)",
         "Final Train Loss", "Peak Train Mem (MB)",
         "Total Model Params", "Peak Infer Mem (MB)"
     ]
@@ -107,7 +106,7 @@ if __name__ == "__main__":
     for r in results:
         print(
             f"{str(r['run_name']):<20} | {str(r['use_projection']):<15} | {str(r['projection_dim']):<14} | "
-            f"{r['train_time_sec']:<17.2f} | {r['infer_time_sec']:<16.2f} | {str(r['mcts_steps']):<12} | "
+            f"{r['train_time_sec']:<17.2f} | {r['infer_time_sec']:<16.2f} | "
             f"{str(r['final_train_loss']):<18} | {str(r['peak_train_mem_MB']):<20} | "
             f"{str(r['total_model_params']):<20} | {str(r['peak_infer_mem_MB']):<20}"
         )
@@ -123,7 +122,6 @@ if __name__ == "__main__":
                 "Projection Dim": r["projection_dim"],
                 "Train Time (sec)": f"{r['train_time_sec']:.2f}",
                 "Infer Time (sec)": f"{r['infer_time_sec']:.2f}",
-                "MCTS Steps": r["mcts_steps"],
                 "Final Train Loss": r["final_train_loss"],
                 "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                 "Total Model Params": r["total_model_params"],
