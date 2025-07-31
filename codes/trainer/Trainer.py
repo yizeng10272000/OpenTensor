@@ -9,6 +9,8 @@ from torch.utils.data import DataLoader, Subset
 from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 
+
+
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join("..")))
@@ -291,9 +293,7 @@ class Trainer():
         '''
         The main function of training
         '''
-        import torch
-        import time
-        from torch.utils.tensorboard import SummaryWriter
+
 
         optimizer_a = self.optimizer_a
         scheduler_a = self.scheduler_a
@@ -461,12 +461,6 @@ class Trainer():
               vis=False,
               noise=False,
               log=True):
-
-        import torch
-        import time
-        from tqdm import tqdm
-        import numpy as np
-        import os
 
         log_actions = []
 

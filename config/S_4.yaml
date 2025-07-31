@@ -63,7 +63,7 @@ net:
   # projection_dim: 32     
 
 mcts:
-  simulate_times: 20
+  simulate_times: 200
   R_limit: 8
 
 env:

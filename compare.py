@@ -44,7 +44,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
     # Training-related indicators
     final_train_loss = getattr(trainer, "final_train_loss", "NA")
-    train_steps = getattr(trainer, "train_steps", "NA")
     peak_train_mem = getattr(trainer, "peak_train_memory_MB", "NA")
 
     # Model parameter number
@@ -75,7 +74,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "infer_time_sec": infer_time,
         "mcts_steps": steps,
         "final_train_loss": final_train_loss,
-        "train_steps": train_steps,
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
         "peak_infer_mem_MB": peak_infer_mem,
