@@ -542,6 +542,9 @@ class Trainer():
             self.peak_infer_memory_MB = peak_mem_bytes / (1024 ** 2)
         else:
             self.peak_infer_memory_MB = "NA"
+            
+        # Record the number of steps taken (i.e., the rank of the final multiplication algorithm)
+        self.final_rank = len(log_actions)
 
         print(f"Inference finished: steps={step_ct}, time={self.infer_time_sec:.2f}s, peak memory={self.peak_infer_memory_MB} MB")
 

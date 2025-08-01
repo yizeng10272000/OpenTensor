@@ -61,6 +61,7 @@ def run_opentensor(use_projection=True, projection_dim=None):
     infer_time = t3 - t2
 
     peak_infer_mem = getattr(trainer, "peak_infer_memory_MB", "NA")
+    final_rank = getattr(trainer, "final_rank", "NA")  
 
     return {
         "run_name": run_name,
@@ -72,6 +73,7 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
         "peak_infer_mem_MB": peak_infer_mem,
+        "final_rank": final_rank,  
         "latest_subdir": latest_subdir,
     }
 
@@ -140,6 +142,7 @@ if __name__ == "__main__":
          "Train Time (sec)", "Infer Time (sec)",
          "Final Train Loss", "Peak Train Mem (MB)",
          "Total Model Params", "Peak Infer Mem (MB)",
+         "Final Rank",  
          "Depth"]
         + [f"Score_{i}" for i in range(max_len)]
         + [f"Q_{i}" for i in range(max_len)]
@@ -165,6 +168,7 @@ if __name__ == "__main__":
                         "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                         "Total Model Params": r["total_model_params"],
                         "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
+                        "Final Rank": r["final_rank"],  
                         "Depth": rec["Depth"],
                     }
 
@@ -185,6 +189,7 @@ if __name__ == "__main__":
                     "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                     "Total Model Params": r["total_model_params"],
                     "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
+                    "Final Rank": r["final_rank"], 
                     "Depth": ""
                 })
 
