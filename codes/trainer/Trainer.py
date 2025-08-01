@@ -492,7 +492,14 @@ class Trainer():
 
         infer_start_time = time.time()
 
+        # Initialize the logging container for each step
+        self.per_step_log = []
+
         for step in tqdm(range(step_limit)):
+            step_start_time = time.time()
+            if self.device.startswith("cuda"):
+                torch.cuda.reset_peak_memory_stats()
+
             print(f"Current state is (step{step}):")
             print(env.cur_state)
 
@@ -501,14 +508,36 @@ class Trainer():
                 mcts.visualize()
             print(f"We choose action(step{step}):")
             print(action)
-            terminate_flag = env.step(action)  # Will change self.cur_state.
-            mcts.move(action)  # Move MCTS forward.
+            terminate_flag = env.step(action)
+            mcts.move(action)
             log_actions.append(action)
 
+            step_end_time = time.time()
+            step_infer_time = step_end_time - step_start_time
+
+            if self.device.startswith("cuda"):
+                step_peak_mem_MB = torch.cuda.max_memory_allocated() / (1024 ** 2)
+            else:
+                step_peak_mem_MB = "NA"
+
+            step_pi_max = float(max(pi)) if isinstance(pi, list) else float(np.max(pi)) if isinstance(pi, np.ndarray) else float(pi.max().item())
+
+            # Write the information of this step into per_step_log
+            self.per_step_log.append({
+                "step": step,
+                "step_infer_time_sec": step_infer_time,
+                "step_peak_mem_MB": step_peak_mem_MB,
+                "step_pi_max": step_pi_max
+            })
+
+            # Writing to a log file
             if log:
                 with open(infer_log_f, "a") as f:
                     f.write(log_txt)
-                    f.write("\n\n\n")
+                    f.write("\n\n")
+                    f.write(f"Step {step} - infer_time: {step_infer_time:.4f}s, "
+                            f"peak_mem: {step_peak_mem_MB}, "
+                            f"pi_max: {step_pi_max:.4f}\n\n")
 
             if terminate_flag:
                 step_ct = step + 1
@@ -519,36 +548,32 @@ class Trainer():
 
         print("Final result:")
         print(env.cur_state)
-
         print("Actions are:")
         print(np.stack(log_actions, axis=0))
 
         if log:
             with open(infer_log_f, "a") as f:
-                f.write("\n\n\n")
-                f.write("\nFinal result:\n")
-                f.write("\n" + str(env.cur_state) + "\n")
-                f.write("\nActions are:\n")
-                f.write("\n" + str(np.stack(log_actions, axis=0)) + "\n")
-                f.write("\n\n\n")
-                f.write(f"\nStep ct: {step_ct}\n")
+                f.write("\n\nFinal result:\n")
+                f.write(str(env.cur_state) + "\n")
+                f.write("Actions are:\n")
+                f.write(str(np.stack(log_actions, axis=0)) + "\n\n")
+                f.write(f"Step ct: {step_ct}\n")
 
-        # Record inference time
+        # Record final stats
         self.infer_time_sec = infer_end_time - infer_start_time
-
-        # Record the peak value of video memory, in MB
         if self.device.startswith("cuda"):
             peak_mem_bytes = torch.cuda.max_memory_allocated()
             self.peak_infer_memory_MB = peak_mem_bytes / (1024 ** 2)
         else:
             self.peak_infer_memory_MB = "NA"
             
-        # Record the number of steps taken (i.e., the rank of the final multiplication algorithm)
         self.final_rank = len(log_actions)
 
-        print(f"Inference finished: steps={step_ct}, time={self.infer_time_sec:.2f}s, peak memory={self.peak_infer_memory_MB} MB")
+        print(f"Inference finished: steps={step_ct}, time={self.infer_time_sec:.2f}s, "
+              f"peak memory={self.peak_infer_memory_MB} MB")
 
         return step_ct
+
 
 
         

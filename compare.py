@@ -61,7 +61,8 @@ def run_opentensor(use_projection=True, projection_dim=None):
     infer_time = t3 - t2
 
     peak_infer_mem = getattr(trainer, "peak_infer_memory_MB", "NA")
-    final_rank = getattr(trainer, "final_rank", "NA")  
+    final_rank = getattr(trainer, "final_rank", "NA")
+    per_step_log = getattr(trainer, "per_step_log", [])
 
     return {
         "run_name": run_name,
@@ -73,17 +74,18 @@ def run_opentensor(use_projection=True, projection_dim=None):
         "peak_train_mem_MB": peak_train_mem,
         "total_model_params": total_params,
         "peak_infer_mem_MB": peak_infer_mem,
-        "final_rank": final_rank,  
+        "final_rank": final_rank,
         "latest_subdir": latest_subdir,
+        "per_step_log": per_step_log,
     }
 
 
 def parse_infer_txt_all_blocks(txt_path):
     pattern = re.compile(
-        r"Depth:\s*\n\s*(\d+).*?"  # Depth number
-        r"scores:\s*\n\s*\[([^\]]+)\].*?"  # scores array
-        r"Q:\s*\n\s*\[([^\]]+)\].*?"  # Q array
-        r"N:\s*\n\s*\[([^\]]+)\]",  # N array
+        r"Depth:\s*\n\s*(\d+).*?"
+        r"scores:\s*\n\s*\[([^\]]+)\].*?"
+        r"Q:\s*\n\s*\[([^\]]+)\].*?"
+        r"N:\s*\n\s*\[([^\]]+)\]",
         re.DOTALL
     )
 
@@ -97,7 +99,7 @@ def parse_infer_txt_all_blocks(txt_path):
         q_list = [qv.strip() for qv in q.strip().split()]
         n_list = [nv.strip() for nv in n.strip().split()]
         results.append({
-            "Depth": depth,
+            "Depth": int(depth),
             "Scores": score_list,
             "Q": q_list,
             "Action Count": n_list,
@@ -132,9 +134,9 @@ if __name__ == "__main__":
     results.append(result_no_proj)
 
     # Run with projection - uncomment if needed
-    # for dim in range(16, 61, 4):
-    #     res = run_opentensor(use_projection=True, projection_dim=dim)
-    #     results.append(res)
+    for dim in range(16, 61, 4):
+        res = run_opentensor(use_projection=True, projection_dim=dim)
+        results.append(res)
 
     max_len = 5
     header = (
@@ -142,8 +144,8 @@ if __name__ == "__main__":
          "Train Time (sec)", "Infer Time (sec)",
          "Final Train Loss", "Peak Train Mem (MB)",
          "Total Model Params", "Peak Infer Mem (MB)",
-         "Final Rank",  
-         "Depth"]
+         "Final Rank", "Depth",
+         "Step Infer Time (sec)", "Step Peak Mem (MB)", "Step Pi Max"]
         + [f"Score_{i}" for i in range(max_len)]
         + [f"Q_{i}" for i in range(max_len)]
         + [f"Action Count_{i}" for i in range(max_len)]
@@ -156,8 +158,13 @@ if __name__ == "__main__":
 
         for r in results:
             infer_records = read_infer_txt_records(r["latest_subdir"])
+            step_logs = r.get("per_step_log", [])
+            step_log_dict = {entry["step"]: entry for entry in step_logs}
+
             if infer_records:
                 for rec in infer_records:
+                    depth = int(rec["Depth"])
+                    step_info = step_log_dict.get(depth, {})
                     row = {
                         "Run Name": r["run_name"],
                         "Use Projection": r["use_projection"],
@@ -168,8 +175,11 @@ if __name__ == "__main__":
                         "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                         "Total Model Params": r["total_model_params"],
                         "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
-                        "Final Rank": r["final_rank"],  
-                        "Depth": rec["Depth"],
+                        "Final Rank": r["final_rank"],
+                        "Depth": depth,
+                        "Step Infer Time (sec)": f"{step_info.get('step_infer_time_sec', ''):.4f}" if "step_infer_time_sec" in step_info else "",
+                        "Step Peak Mem (MB)": f"{step_info.get('step_peak_mem_MB', ''):.2f}" if "step_peak_mem_MB" in step_info else "",
+                        "Step Pi Max": f"{step_info.get('step_pi_max', ''):.4f}" if "step_pi_max" in step_info else "",
                     }
 
                     for i in range(max_len):
@@ -189,8 +199,8 @@ if __name__ == "__main__":
                     "Peak Train Mem (MB)": r["peak_train_mem_MB"],
                     "Total Model Params": r["total_model_params"],
                     "Peak Infer Mem (MB)": r["peak_infer_mem_MB"],
-                    "Final Rank": r["final_rank"], 
+                    "Final Rank": r["final_rank"],
                     "Depth": ""
                 })
 
-    print("\n✅ Comparison results saved to ./exp/compare_results.csv with separated Scores, Q, and Action Count values.")
+    print("\n✅ Comparison results saved to ./exp/compare_results.csv with per-step inference details.")
