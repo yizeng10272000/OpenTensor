@@ -3,34 +3,34 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import os
 
-# 设置风格和分辨率
+# Set the style and resolution
 sns.set(style="whitegrid")
 plt.rcParams["figure.dpi"] = 150
 
-# 输入和输出路径
+# Input and output paths
 file_path = "exp/compare_result.csv"
 output_dir = "compare_result"
 os.makedirs(output_dir, exist_ok=True)
 
-# 读取数据
+# Reading Data
 df = pd.read_csv(file_path)
 df["Use Projection"] = df["Use Projection"].astype(str)
 
-# 1. 训练时间
+# 1. Training time
 plt.figure(figsize=(8, 5))
 sns.boxplot(data=df, x="Use Projection", y="Train Time (sec)")
 plt.title("Training Time vs Use of Projection")
 plt.savefig(os.path.join(output_dir, "train_time_vs_projection.png"))
 plt.close()
 
-# 2. 推理时间
+# 2. Inference time
 plt.figure(figsize=(8, 5))
 sns.boxplot(data=df, x="Use Projection", y="Infer Time (sec)")
 plt.title("Inference Time vs Use of Projection")
 plt.savefig(os.path.join(output_dir, "infer_time_vs_projection.png"))
 plt.close()
 
-# 3. 每一步 depth 的推理时间变化
+# 3. Changes in inference time at each depth step
 if "Depth" in df.columns and "Step Infer Time (sec)" in df.columns:
     plt.figure(figsize=(10, 6))
     sns.lineplot(
@@ -45,7 +45,7 @@ if "Depth" in df.columns and "Step Infer Time (sec)" in df.columns:
     plt.savefig(os.path.join(output_dir, "step_infer_time_vs_depth.png"))
     plt.close()
 
-# 4. 策略分布最大值 Pi Max 变化
+# 4. Strategy distribution maximum value Pi Max changes
 if "Step Pi Max" in df.columns:
     plt.figure(figsize=(10, 6))
     sns.lineplot(
@@ -81,4 +81,4 @@ plt.title("Model Size vs Final Train Loss")
 plt.savefig(os.path.join(output_dir, "model_size_vs_final_train_loss.png"))
 plt.close()
 
-print(f"分析完成，图表已保存至目录：{output_dir}")
+print(f"Analysis completed, chart saved to directory: {output_dir}")
