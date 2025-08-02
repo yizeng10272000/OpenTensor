@@ -129,14 +129,14 @@ if __name__ == "__main__":
 
     results = []
 
+    # Run with projection
+    for dim in range(16, 57, 8):
+        res = run_opentensor(use_projection=True, projection_dim=dim)
+        results.append(res)
+        
     # Run without projection
     result_no_proj = run_opentensor(use_projection=False)
     results.append(result_no_proj)
-
-    # Run with projection - uncomment if needed
-    for dim in range(16, 61, 4):
-        res = run_opentensor(use_projection=True, projection_dim=dim)
-        results.append(res)
 
     max_len = 5
     header = (

@@ -8,8 +8,8 @@ sns.set(style="whitegrid")
 plt.rcParams["figure.dpi"] = 150
 
 # Input and output paths
-file_path = "exp/compare_result.csv"
-output_dir = "compare_result"
+file_path = "exp/compare_results.csv"
+output_dir = "compare_results"
 os.makedirs(output_dir, exist_ok=True)
 
 # Reading Data
