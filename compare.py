@@ -130,7 +130,7 @@ if __name__ == "__main__":
     results = []
 
     # Run with projection
-    for dim in range(16, 57, 8):
+    for dim in range(16, 61, 4):
         res = run_opentensor(use_projection=True, projection_dim=dim)
         results.append(res)
         
