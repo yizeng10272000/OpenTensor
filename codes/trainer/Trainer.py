@@ -468,7 +468,7 @@ class Trainer():
         assert resume is not None, "No meaning for random init infer."
         self.load_model(resume)
 
-        # 如果传入了自定义tensor，则覆盖init_state  # <<< 新增
+        # csutom tensor
         if tensor_override is not None:
             init_state = tensor_override
 
