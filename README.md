@@ -86,4 +86,34 @@ python main.py --config ./config/S_4_without_projection.yaml --mode infer --run_
 
 ---
 
+## 4. Create a specific tensor
+
+You can create a custom synthetic tensor for testing or evaluation purposes.
+
+```bash
+python custom_tensor.py
+```
+
+- The specific tensor to be generated should be modified directly in the `custom_tensor.py` script.
+- The $4 \times 4 \times 4$ tensor format is tested by default.
+- If you want to generate tensors of other sizes, you need to modify the corresponding config file (e.g., `S_4.yaml`) and retrain the model accordingly.
+- The generated custom tensor will be saved as `my_custom_tensor.npy` in the working directory.
+
+---
+
+## 5. Test a trained model with a custom tensor
+
+You can evaluate a trained model using the custom tensor created in the previous step.
+
+```bash
+python main.py --mode infer --config ./config/S_4.yaml --run_dir "<path_to_trained_model>/latest.pth" --custom_tensor_path ./my_custom_tensor.npy
+```
+
+- Replace `<path_to_trained_model>` with the directory path of your trained model checkpoint. 
+
+- `latest.pth` is the checkpoint file of the trained model you want to evaluate.
+- The inference results will be saved as `<timestamp>.txt` inside the `infer` folder corresponding to the run directory
+
+---
+
 Thank you for using this project! Please feel free to open issues or contact us if you have any questions.
