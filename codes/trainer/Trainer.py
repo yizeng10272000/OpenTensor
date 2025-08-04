@@ -460,12 +460,17 @@ class Trainer():
               resume=None,
               vis=False,
               noise=False,
-              log=True):
+              log=True, 
+              tensor_override=None):
 
         log_actions = []
 
         assert resume is not None, "No meaning for random init infer."
         self.load_model(resume)
+
+        # 如果传入了自定义tensor，则覆盖init_state  # <<< 新增
+        if tensor_override is not None:
+            init_state = tensor_override
 
         if log:
             exp_dir = os.path.join(os.path.dirname(resume), '..')
@@ -573,6 +578,7 @@ class Trainer():
               f"peak memory={self.peak_infer_memory_MB} MB")
 
         return step_ct
+
 
 
 

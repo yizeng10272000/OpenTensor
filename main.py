@@ -1,5 +1,7 @@
 import yaml
 import argparse
+import numpy as np
+import time
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -14,6 +16,7 @@ def parse():
     parser.add_argument('--mode', type=str, default="train", help="modes: [generate_data, train, infer]")
     parser.add_argument('--resume', default=None, help="resume ckpt path for training")
     parser.add_argument('--run_dir', default=None, help="ckpt path for inference")
+    parser.add_argument('--custom_tensor_path', type=str, default=None, help="Path to custom tensor .npy file for inference")
     args = parser.parse_args()
     return args
 
@@ -27,17 +30,17 @@ if __name__ == '__main__':
     with open(conf_path, 'r', encoding="utf-8") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
     
-    # set the random seed
+    # Set random seed
     seed = kwargs.get("seed", 42)
     set_random_seed(seed)
 
-    # === Automatically pass projection parameters ===
+    # Enable projection if specified
     if "projection_dim" in kwargs["net"]:
         kwargs["net"]["use_projection"] = True  
     else:
         kwargs["net"]["use_projection"] = False
 
-    # === Instantiating Net will register the projection ===
+    # Instantiate modules
     net = Net(**kwargs["net"])
     mcts = MCTS(**kwargs["mcts"], init_state=None)
     env = Environment(**kwargs["env"], init_state=None)
@@ -63,9 +66,18 @@ if __name__ == '__main__':
 
     elif mode == "infer":
         assert args.run_dir is not None, "Please specify --run_dir to the checkpoint you want to test!"
-        import time
+
+        # Load custom tensor if provided
+        if args.custom_tensor_path is not None:
+            custom_tensor = np.load(args.custom_tensor_path)
+            print("✅ Loaded custom tensor with shape:", custom_tensor.shape)
+        else:
+            custom_tensor = None
+
         t0 = time.time()
-        step_ct = trainer.infer(resume=args.run_dir)
+        step_ct = trainer.infer(resume=args.run_dir, tensor_override=custom_tensor)
         t1 = time.time()
         print(f"Infer done. Steps: {step_ct}, Time: {t1 - t0:.2f}s")
 
+    else:
+        raise ValueError(f"Unknown mode: {mode}")
