@@ -2,6 +2,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
 import os
+from scipy.interpolate import interp1d
+import numpy as np
 
 # Setup
 sns.set(style="whitegrid")
@@ -22,19 +24,36 @@ def label_projection(row):
 
 df["Projection Category"] = df.apply(label_projection, axis=1)
 
-# === Function: Scatter plot with labels ===
-def scatter_with_labels(data, x, y, label_col, hue, title, filename):
+# === Function: Scatter plot with labels and interpolation line ===
+def scatter_with_labels(data, x, y, label_col, hue, title, filename, interpolation=True):
     fig, ax = plt.subplots(figsize=(10, 6))
     palette = {"False": "#ff7f0e", "True": "#1f77b4"}
-    
+
+    # Draw scatter points
     sns.scatterplot(data=data, x=x, y=y, hue=hue, style=hue, s=100, palette=palette, ax=ax)
 
+    # Add text labels
     x_offset = (data[x].max() - data[x].min()) * 0.03
     y_offset = (data[y].max() - data[y].min()) * 0.04
 
     for _, row in data.iterrows():
         label = "NoProj" if row["Use Projection"] == "False" else f"Dim{int(row['Projection Dim'])}"
         ax.text(row[x], row[y] + y_offset, label, fontsize=8, ha='center', va='bottom')
+
+    # Add interpolation line
+    if interpolation:
+        # Drop NaNs and group by x to eliminate duplicates (take mean of y)
+        cleaned_data = data[[x, y]].dropna().groupby(x).mean().reset_index().sort_values(by=x)
+
+        x_vals = cleaned_data[x].values
+        y_vals = cleaned_data[y].values
+
+        # Only interpolate if enough points
+        if len(x_vals) >= 2:
+            interp_func = interp1d(x_vals, y_vals, kind='linear', fill_value="extrapolate")
+            x_new = np.linspace(x_vals.min(), x_vals.max(), 300)
+            y_new = interp_func(x_new)
+            ax.plot(x_new, y_new, color='black', linestyle='--', label='Interpolation')
 
     ax.set_title(title)
     ax.set_xlabel(x)
@@ -43,6 +62,7 @@ def scatter_with_labels(data, x, y, label_col, hue, title, filename):
     plt.tight_layout()
     plt.savefig(os.path.join(output_dir, filename))
     plt.close()
+
 
 # === Function: Line plot ===
 def line_plot(data, x, y, hue, title, filename):
@@ -130,16 +150,6 @@ if "Infer Time (sec)" in df.columns:
         y="Infer Time (sec)",
         title="Inference Time vs Projection Dimension",
         filename="infer_time_vs_projection_dim.png"
-    )
-
-# === 6. Final Train Loss vs Projection Dim ===
-if "Final Train Loss" in df.columns:
-    bar_plot_with_labels(
-        data=df,
-        x="Projection Category",
-        y="Final Train Loss",
-        title="Final Train Loss vs Projection Dimension",
-        filename="final_train_loss_vs_projection_dim.png"
     )
 
 print(f"✅ All analysis completed. Charts saved in: {output_dir}")
