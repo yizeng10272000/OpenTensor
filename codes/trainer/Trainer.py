@@ -500,15 +500,55 @@ class Trainer():
               resume=None,
               vis=False,
               noise=False,
-              log=True, 
+              log=True,
               tensor_override=None):
+
+        import copy
+        import os
+        import time
+        import numpy as np
+        import torch
+        from tqdm import tqdm
+
+        def states_equal(a, b):
+            """Try a robust equality check for commonly used state types."""
+            try:
+                return np.array_equal(np.asarray(a), np.asarray(b))
+            except Exception:
+                # fallback to string compare (not ideal, but safe)
+                return str(a) == str(b)
+
+        def print_state_diff(a, b, max_items=5):
+            """Print small diagnostic about differences for arrays."""
+            try:
+                aa = np.asarray(a)
+                bb = np.asarray(b)
+                if aa.shape != bb.shape:
+                    print(f"  DIAG: shapes differ: {aa.shape} vs {bb.shape}")
+                    return
+                neq = np.nonzero(aa != bb)
+                if len(neq[0]) == 0:
+                    print("  DIAG: no element differences found by np != (maybe type difference).")
+                    return
+                # show up to max_items differing indices and values
+                count = min(max_items, aa[neq].size)
+                flat_idx = np.flatnonzero(aa.flatten() != bb.flatten())
+                print(f"  DIAG: {aa.size} total elems, {flat_idx.size} differ; showing up to {count}:")
+                for i in range(count):
+                    fi = flat_idx[i]
+                    idx = np.unravel_index(fi, aa.shape)
+                    print(f"    idx={idx}, a={aa[idx]}, b={bb[idx]}")
+            except Exception as e:
+                print(f"  DIAG: couldn't compute array diff: {e}")
+                print("  a (repr):", repr(a)[:200])
+                print("  b (repr):", repr(b)[:200])
 
         log_actions = []
 
         assert resume is not None, "No meaning for random init infer."
         self.load_model(resume)
 
-        # csutom tensor
+        # custom tensor
         if tensor_override is not None:
             init_state = tensor_override
 
@@ -522,22 +562,22 @@ class Trainer():
         env = self.env
         mcts = self.mcts
 
+        # Reset environment
         env.reset(init_state, no_base_change)
         net.set_mode("infer")
         net.set_samples_n(mcts_samples_n)
         net.eval()
-        mcts.reset(env.cur_state, simulate_times=mcts_simu_times, R_limit=step_limit)
+
+        # Initialize MCTS with a deepcopy of env.cur_state
+        mcts.reset(copy.deepcopy(env.cur_state), simulate_times=mcts_simu_times, R_limit=step_limit)
         env.R_limit = step_limit + 1
 
         step_ct = 0
 
-        # Reset the memory peak value before inference starts
         if self.device.startswith("cuda"):
             torch.cuda.reset_peak_memory_stats()
 
         infer_start_time = time.time()
-
-        # Initialize the logging container for each step
         self.per_step_log = []
 
         for step in tqdm(range(step_limit)):
@@ -548,13 +588,85 @@ class Trainer():
             print(f"Current state is (step{step}):")
             print(env.cur_state)
 
-            action, actions, pi, log_txt = mcts(env.cur_state, net, log=True, noise=noise)
+            # Always pass a deepcopy to MCTS to avoid shared-memory surprises
+            state_for_mcts = copy.deepcopy(env.cur_state)
+
+            # Diagnostic: check equality before calling MCTS; if mismatch, reset MCTS
+            try:
+                equal_before = states_equal(state_for_mcts, getattr(mcts, "root_node").state)
+            except Exception:
+                # If mcts has no root_node or structure is unexpected, mark not equal
+                equal_before = False
+
+            if not equal_before:
+                print("WARNING: MCTS root state != env.cur_state BEFORE calling MCTS. Resetting MCTS root to current env state.")
+                # log to file as well
+                if log:
+                    with open(infer_log_f, "a") as f:
+                        f.write(f"[WARN] MCTS root != env.cur_state at step {step}. Resetting MCTS.\n")
+                # print some diagnostics
+                try:
+                    print_state_diff(state_for_mcts, getattr(mcts, "root_node").state)
+                except Exception as e:
+                    print(f"  DIAG: failed to show diff: {e}")
+
+                # reset MCTS root to current environment state (deepcopy)
+                mcts.reset(copy.deepcopy(env.cur_state), simulate_times=mcts_simu_times, R_limit=step_limit)
+
+            # Attempt to call MCTS; if assertion still occurs, catch and retry once after reset
+            retried = False
+            while True:
+                try:
+                    action, actions, pi, log_txt = mcts(state_for_mcts, net, log=True, noise=noise)
+                    break
+                except AssertionError as ae:
+                    # MCTS asserts state mismatch internally
+                    print(f"AssertionError from MCTS at step {step}: {ae}")
+                    # write to log
+                    if log:
+                        with open(infer_log_f, "a") as f:
+                            f.write(f"[ERROR] AssertionError from MCTS at step {step}: {ae}\n")
+                    # show diagnostics
+                    try:
+                        print_state_diff(state_for_mcts, getattr(mcts, "root_node").state)
+                    except Exception:
+                        pass
+                    if retried:
+                        # already retried once, give up and re-raise
+                        raise
+                    # reset MCTS and retry once
+                    print("Resetting MCTS and retrying once...")
+                    if log:
+                        with open(infer_log_f, "a") as f:
+                            f.write(f"[INFO] Resetting MCTS and retrying once at step {step}.\n")
+                    mcts.reset(copy.deepcopy(env.cur_state), simulate_times=mcts_simu_times, R_limit=step_limit)
+                    retried = True
+                    continue
+                except Exception as e:
+                    # other exceptions -> re-raise after logging
+                    print(f"Unexpected exception when calling MCTS at step {step}: {e}")
+                    if log:
+                        with open(infer_log_f, "a") as f:
+                            f.write(f"[ERROR] Unexpected exception when calling MCTS at step {step}: {e}\n")
+                    raise
+
             if vis:
                 mcts.visualize()
             print(f"We choose action(step{step}):")
             print(action)
+
             terminate_flag = env.step(action)
-            mcts.move(action)
+
+            # Move MCTS root to match the chosen action (should update internal root_node.state)
+            try:
+                mcts.move(action)
+            except Exception as e:
+                print(f"WARNING: mcts.move(action) raised {e}; resetting MCTS to env state to continue.")
+                if log:
+                    with open(infer_log_f, "a") as f:
+                        f.write(f"[WARN] mcts.move raised {e}, resetting MCTS to env state.\n")
+                mcts.reset(copy.deepcopy(env.cur_state), simulate_times=mcts_simu_times, R_limit=step_limit)
+
             log_actions.append(action)
 
             step_end_time = time.time()
@@ -567,7 +679,6 @@ class Trainer():
 
             step_pi_max = float(max(pi)) if isinstance(pi, list) else float(np.max(pi)) if isinstance(pi, np.ndarray) else float(pi.max().item())
 
-            # Write the information of this step into per_step_log
             self.per_step_log.append({
                 "step": step,
                 "step_infer_time_sec": step_infer_time,
@@ -575,7 +686,6 @@ class Trainer():
                 "step_pi_max": step_pi_max
             })
 
-            # Writing to a log file
             if log:
                 with open(infer_log_f, "a") as f:
                     f.write(log_txt)
@@ -594,7 +704,10 @@ class Trainer():
         print("Final result:")
         print(env.cur_state)
         print("Actions are:")
-        print(np.stack(log_actions, axis=0))
+        if log_actions:
+            print(np.stack(log_actions, axis=0))
+        else:
+            print([])
 
         if log:
             with open(infer_log_f, "a") as f:
@@ -604,21 +717,19 @@ class Trainer():
                 f.write(str(np.stack(log_actions, axis=0)) + "\n\n")
                 f.write(f"Step ct: {step_ct}\n")
 
-        # Record final stats
         self.infer_time_sec = infer_end_time - infer_start_time
         if self.device.startswith("cuda"):
             peak_mem_bytes = torch.cuda.max_memory_allocated()
             self.peak_infer_memory_MB = peak_mem_bytes / (1024 ** 2)
         else:
             self.peak_infer_memory_MB = "NA"
-            
+
         self.final_rank = len(log_actions)
 
         print(f"Inference finished: steps={step_ct}, time={self.infer_time_sec:.2f}s, "
               f"peak memory={self.peak_infer_memory_MB} MB")
 
         return step_ct
-
 
 
 

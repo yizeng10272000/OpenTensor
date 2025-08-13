@@ -3,6 +3,7 @@ import time
 import yaml
 import csv
 import re
+import copy
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -10,7 +11,7 @@ from codes.net import Net
 from codes.trainer import Trainer
 
 
-def run_opentensor(use_projection=True, projection_dim=None):
+def run_opentensor(use_projection=True, projection_dim=None, tensor_override=None):
     with open("./config/S_4.yaml", "r") as f:
         kwargs = yaml.load(f.read(), Loader=yaml.FullLoader)
 
@@ -31,9 +32,14 @@ def run_opentensor(use_projection=True, projection_dim=None):
     assert os.path.exists(data_path), f"Required data not found: {data_path}"
 
     net = Net(**kwargs["net"])
-    mcts = MCTS(**kwargs["mcts"], init_state=None)
     env = Environment(**kwargs["env"], init_state=None)
-    trainer = Trainer(**kwargs["trainer"], net=net, env=env, mcts=mcts, all_kwargs=kwargs)
+    mcts = MCTS(**kwargs["mcts"], init_state=None)
+
+    trainer = Trainer(**kwargs["trainer"],
+                      net=net,
+                      env=copy.deepcopy(env),
+                      mcts=copy.deepcopy(mcts),
+                      all_kwargs=kwargs)
 
     print(f"\n=== Training [{run_name}] ===")
     t0 = time.time()
@@ -43,7 +49,6 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
     final_train_loss = getattr(trainer, "final_train_loss", "NA")
     peak_train_mem = getattr(trainer, "peak_train_memory_MB", "NA")
-
     total_params = sum(p.numel() for p in net.parameters())
 
     exp_base = f"./exp/{run_name}"
@@ -56,7 +61,8 @@ def run_opentensor(use_projection=True, projection_dim=None):
 
     print(f"\n=== Inference [{run_name}] ===")
     t2 = time.time()
-    trainer.infer(resume=ckpt_path)
+    # 支持传入初始 tensor_override
+    trainer.infer(resume=ckpt_path, tensor_override=tensor_override)
     t3 = time.time()
     infer_time = t3 - t2
 
@@ -129,14 +135,13 @@ if __name__ == "__main__":
 
     results = []
 
-    # Run with projection
-    # for dim in range(16, 61, 4):
-    #    res = run_opentensor(use_projection=True, projection_dim=dim)
-    #    results.append(res)
-        
     # Run without projection
     result_no_proj = run_opentensor(use_projection=False)
     results.append(result_no_proj)
+
+    # Run with projection_dim=16
+    result_with_proj = run_opentensor(use_projection=True, projection_dim=16)
+    results.append(result_with_proj)
 
     max_len = 5
     header = (
