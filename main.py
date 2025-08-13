@@ -44,9 +44,8 @@ if __name__ == '__main__':
     net = Net(**kwargs["net"])
     mcts = MCTS(**kwargs["mcts"], init_state=None)
     env = Environment(**kwargs["env"], init_state=None)
-    trainer = Trainer(**kwargs["trainer"],
-                      net=net, env=env, mcts=mcts,
-                      all_kwargs=kwargs)
+    trainer = Trainer(net=net, env=env, mcts=mcts, **kwargs["trainer"], all_kwargs=kwargs)
+
 
     S_size = kwargs["env"]["S_size"]
     T = kwargs["env"]["T"]

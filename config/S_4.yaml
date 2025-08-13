@@ -33,7 +33,6 @@ net:
   coefficients: 
     - 0
     - 1
-    - -1
   device: "cuda:0"
   N_steps: 3
   N_samples: 32

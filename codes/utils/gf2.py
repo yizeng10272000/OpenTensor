@@ -2,8 +2,9 @@
 
 import numpy as np
 import torch
+from typing import Optional
 
-def _to_bin_nd(x, threshold=None):
+def to_bin(x, threshold=None):
     """
     把任意 numpy / torch 张量规约到 {0,1}（按位 mod 2）。
     浮点数会先二值化（round 或阈值），整型会直接 & 1。
@@ -19,18 +20,62 @@ def _to_bin_nd(x, threshold=None):
         return (a.astype(np.uint8) & 1)
 
 
+def add_mod2(a, b):
+    """
+    GF(2)加法，对应异或操作。
+    支持 numpy 数组或 torch 张量。
+    """
+    a_bin = to_bin(a)
+    b_bin = to_bin(b)
+    if isinstance(a_bin, torch.Tensor) and isinstance(b_bin, torch.Tensor):
+        return a_bin ^ b_bin
+    else:
+        return np.bitwise_xor(a_bin, b_bin)
+
+
+def outer_mod2(a, b, c=None):
+    """
+    GF(2)外积：
+    - 如果 c=None，返回二维外积 a ⊗ b
+    - 如果 c 提供，返回三阶张量外积 a ⊗ b ⊗ c
+    输入向量 a, b, c 可以是 numpy 或 torch 张量。
+    """
+    a_bin = to_bin(a).reshape(-1)
+    b_bin = to_bin(b).reshape(-1)
+    
+    if c is None:
+        if isinstance(a_bin, torch.Tensor) and isinstance(b_bin, torch.Tensor):
+            return (a_bin.unsqueeze(1) & b_bin.unsqueeze(0)).to(torch.uint8)
+        else:
+            return np.outer(a_bin, b_bin) & 1
+    else:
+        c_bin = to_bin(c).reshape(-1)
+        if isinstance(a_bin, torch.Tensor):
+            # PyTorch 三阶外积
+            return (a_bin[:, None, None] & b_bin[None, :, None] & c_bin[None, None, :]).to(torch.uint8)
+        else:
+            # NumPy 三阶外积
+            return np.einsum('i,j,k->ijk', a_bin, b_bin, c_bin) & 1
+
+
+def _to_bin_nd(x, threshold: Optional[float] = None):
+    """
+    把任意 numpy / torch 张量规约到 {0,1}（按位 mod 2）。
+    """
+    return to_bin(x, threshold=threshold)
+
+
 @torch.no_grad()
-def matrix_rank_mod2(M, threshold: float | None = None) -> int:
+def matrix_rank_mod2(M, threshold: Optional[float] = None) -> int:
     """
     计算 GF(2) 上的矩阵秩。
     支持 numpy.ndarray 和 torch.Tensor（二维）。
     """
     A = _to_bin_nd(M, threshold=threshold)
     if isinstance(A, torch.Tensor):
-        # Torch 版按列做高斯消元（XOR），只用行交换 + 异或，无比例缩放
         if A.ndim != 2:
             raise ValueError("matrix_rank_mod2: input must be 2D")
-        A = A.clone()  # 就地修改的拷贝
+        A = A.clone()
         m, n = A.shape
         r = 0
         for c in range(n):
@@ -49,13 +94,11 @@ def matrix_rank_mod2(M, threshold: float | None = None) -> int:
             r += 1
         return int(r)
     else:
-        # NumPy 版
         if A.ndim != 2:
             raise ValueError("matrix_rank_mod2: input must be 2D")
         A = A.copy()
         m, n = A.shape
-        r = 0
-        c = 0
+        r, c = 0, 0
         while r < m and c < n:
             pivot_rel = np.argmax(A[r:, c])
             if A[r + pivot_rel, c] == 0:
@@ -73,29 +116,22 @@ def matrix_rank_mod2(M, threshold: float | None = None) -> int:
         return int(r)
 
 
-def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: float | None = None) -> int:
+def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: Optional[float] = None) -> int:
     """
-    计算三阶张量的 “近似终止惩罚”：把张量沿着某个轴切成一组矩阵，
-    对每个切片求 GF(2) 秩并累加（与原来实数域版本逐切片求秩再相加一致）。
-    默认对最后一维做切片：tensor[..., k]。
-
-    返回：∑_k rank_mod2(tensor_slice_k)
+    计算三阶张量的 “近似终止惩罚”：
+    把张量沿某个轴切成一组矩阵，对每个切片求 GF(2) 秩并累加。
     """
     X = _to_bin_nd(tensor, threshold=threshold)
-    # 统一到 numpy / torch 决策
     if isinstance(X, torch.Tensor):
         if X.ndim < 2:
             return 0
         axis_ = axis if axis >= 0 else X.ndim + axis
-        # 把要切的轴移到最后，便于迭代
         perm = [i for i in range(X.ndim) if i != axis_] + [axis_]
         Xp = X.permute(*perm).contiguous()
-        n_slices = Xp.shape[-1]
         total = 0
-        for k in range(n_slices):
-            Mk = Xp[..., k]  # 取一个矩阵切片
+        for k in range(Xp.shape[-1]):
+            Mk = Xp[..., k]
             if Mk.ndim != 2:
-                # 若更高阶（很少见），把前面所有维展平成行
                 Mk = Mk.reshape(Mk.shape[0], -1)
             total += matrix_rank_mod2(Mk)
         return int(total)
@@ -105,9 +141,8 @@ def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: float | None = 
             return 0
         axis_ = axis if axis >= 0 else A.ndim + axis
         A = np.moveaxis(A, axis_, -1)
-        n_slices = A.shape[-1]
         total = 0
-        for k in range(n_slices):
+        for k in range(A.shape[-1]):
             Mk = A[..., k]
             if Mk.ndim != 2:
                 Mk = Mk.reshape(Mk.shape[0], -1)

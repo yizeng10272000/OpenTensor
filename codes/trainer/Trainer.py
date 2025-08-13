@@ -53,7 +53,8 @@ class Trainer():
                  self_play_buffer=100000,
                  grad_clip=4.0,
                  val_freq=2000,
-                 all_kwargs=None):
+                 all_kwargs=None,
+                 **kwargs):  
         '''
         Initialize a Trainer.
         Contains net, env and MCTS
@@ -64,15 +65,15 @@ class Trainer():
         self.S_size = S_size
         self.T = T
         self.coefficients = coefficients
-        
+
         self.self_examples = []
         self.synthetic_examples = []
-        
+
         self.entropy_loss = torch.nn.CrossEntropyLoss()
         self.quantile_loss = QuantileLoss()
         self.a_weight = a_weight
         self.v_weight = v_weight
-        
+
         self.optimizer_a = torch.optim.AdamW(net.parameters(),
                                              weight_decay=weight_decay,
                                              lr=lr)
@@ -85,7 +86,7 @@ class Trainer():
         self.scheduler_v = torch.optim.lr_scheduler.StepLR(self.optimizer_v,
                                                            step_size=step_size,
                                                            gamma=gamma)
-        
+
         self.batch_size = batch_size
         self.iters_n = iters_n
         self.grad_clip = grad_clip
@@ -94,17 +95,20 @@ class Trainer():
         self.self_play_freq = self_play_freq
         self.self_play_buffer = self_play_buffer
         self.val_freq = val_freq
-        
+
         self.exp_dir = exp_dir
-        self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))  
+        self.save_dir = os.path.join(exp_dir, exp_name, str(int(time.time())))
         self.log_dir = os.path.join(self.save_dir, "log")
         self.data_dir = os.path.join(self.save_dir, "data")
-        
+
         self.device = device
         self.self_play_device = self_play_device
         self.net.to(device)
         self.all_kwargs = all_kwargs
-        
+
+        # 保存额外参数
+        self.extra_kwargs = kwargs
+
         # Initialize training related indicators
         self.final_train_loss = None
         self.train_steps = 0
@@ -112,6 +116,7 @@ class Trainer():
 
         # Reasoning-related metrics
         self.peak_infer_memory_MB = None
+
 
     def save_model(self, filename, step):
         save_path = os.path.join(self.save_dir, filename)
@@ -135,29 +140,37 @@ class Trainer():
 
     
     def generate_synthetic_examples(self,
-                                     prob=[.8, .1, .1],
-                                     samples_n=10000,
-                                     R_limit=12,
-                                     save_path=None,
-                                     save_type="traj",
-                                     domain="R",
-                                     threshold=0.5) -> list:
-        '''
-        Generate artificially synthesized Tensor examples
+                                    prob=None,
+                                    samples_n=10000,
+                                    R_limit=12,
+                                    save_path=None,
+                                    save_type="traj",
+                                    domain="R",
+                                    threshold=0.5) -> list:
+        """
+        Generate artificially synthesized Tensor examples.
         domain: "R" (real field) or "GF2" (binary field)
         threshold: Binarization threshold, only used in GF2 mode
-        '''
+        """
         assert save_type in ["traj", "tuple"]
         S_size = self.S_size
-        coefficients = self.coefficients
         T = self.T
 
-        # GF2 tools
+        # Set coefficients and probability based on domain
         if domain == "GF2":
             from codes.utils.gf2 import to_bin, add_mod2, outer_mod2, rank_gf2
+            coefficients = [0, 1]
+            if prob is None or len(prob) != len(coefficients):
+                prob = [0.5, 0.5]
         else:
             from codes.utils import outer
             import numpy as np
+            coefficients = self.coefficients if hasattr(self, 'coefficients') else [-1, 0, 1]
+            if prob is None or len(prob) != len(coefficients):
+                prob = [0.8, 0.1, 0.1]
+            # Normalize prob in case sum != 1
+            prob = np.array(prob, dtype=np.float64)
+            prob = prob / prob.sum()
 
         total_results = []
         for _ in tqdm(range(samples_n)):
@@ -167,7 +180,7 @@ class Trainer():
                 states = []
                 actions = []
                 rewards = []
-                for r in range(1, (R + 1)):
+                for r in range(1, R + 1):
                     ct = 0
                     while True:
                         u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
@@ -228,7 +241,7 @@ class Trainer():
                 actions_tensor = [action2tensor(action) for action in actions]
                 for idx, state in enumerate(states):
                     tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
-                    tensors[0] = state  # state.
+                    tensors[0] = state
                     if idx != 0:
                         tensors[1:(idx + 1)] = np.stack(
                             reversed(actions_tensor[max(idx - (T - 1), 0):idx]), axis=0
