@@ -147,30 +147,25 @@ class Trainer():
                                     save_type="traj",
                                     domain="R",
                                     threshold=0.5) -> list:
-        """
-        Generate artificially synthesized Tensor examples.
+        '''
+        Generate artificially synthesized Tensor examples
         domain: "R" (real field) or "GF2" (binary field)
         threshold: Binarization threshold, only used in GF2 mode
-        """
+        '''
         assert save_type in ["traj", "tuple"]
         S_size = self.S_size
+        coefficients = self.coefficients
         T = self.T
 
-        # Set coefficients and probability based on domain
+        # GF2 tools
         if domain == "GF2":
             from codes.utils.gf2 import to_bin, add_mod2, outer_mod2, rank_gf2
-            coefficients = [0, 1]
-            if prob is None or len(prob) != len(coefficients):
-                prob = [0.5, 0.5]
+            coefficients = [0, 1]  # 强制二元
+            prob = [0.5, 0.5]      # 强制匹配
         else:
             from codes.utils import outer
-            import numpy as np
-            coefficients = self.coefficients if hasattr(self, 'coefficients') else [-1, 0, 1]
-            if prob is None or len(prob) != len(coefficients):
-                prob = [0.8, 0.1, 0.1]
-            # Normalize prob in case sum != 1
-            prob = np.array(prob, dtype=np.float64)
-            prob = prob / prob.sum()
+            if prob is None:
+                prob = [0.8, 0.1, 0.1]  # 原本默认
 
         total_results = []
         for _ in tqdm(range(samples_n)):
@@ -180,7 +175,7 @@ class Trainer():
                 states = []
                 actions = []
                 rewards = []
-                for r in range(1, R + 1):
+                for r in range(1, (R + 1)):
                     ct = 0
                     while True:
                         u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
@@ -193,7 +188,6 @@ class Trainer():
                             w = to_bin(w, threshold)
 
                         ct += 1
-                        # Non-zero check
                         if domain == "GF2":
                             if not np.all(outer_mod2(u, v, w) == 0):
                                 break
@@ -203,7 +197,6 @@ class Trainer():
                         if ct > 100000:
                             raise Exception("Oh my god...")
 
-                    # update sample
                     if domain == "GF2":
                         sample = add_mod2(sample, outer_mod2(u, v, w))
                     else:
@@ -259,6 +252,7 @@ class Trainer():
             np.save(save_path, np.array(total_results, dtype=object))
 
         return total_results
+
 
         
     

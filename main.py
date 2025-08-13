@@ -2,6 +2,7 @@ import yaml
 import argparse
 import numpy as np
 import time
+import random
 
 from codes.env import Environment
 from codes.mcts import MCTS
@@ -33,6 +34,8 @@ if __name__ == '__main__':
     # Set random seed
     seed = kwargs.get("seed", 42)
     set_random_seed(seed)
+    random.seed(seed)
+    np.random.seed(seed)
 
     # Enable projection if specified
     if "projection_dim" in kwargs["net"]:
@@ -46,14 +49,21 @@ if __name__ == '__main__':
     env = Environment(**kwargs["env"], init_state=None)
     trainer = Trainer(net=net, env=env, mcts=mcts, **kwargs["trainer"], all_kwargs=kwargs)
 
-
     S_size = kwargs["env"]["S_size"]
     T = kwargs["env"]["T"]
+    domain = kwargs["env"].get("domain", "R")
 
     if mode == "generate_data":
+        # 如果是 GF2 域，强制概率为 [0.5, 0.5] 避免 ValueError
+        prob = None
+        if domain == "GF2":
+            prob = [0.5, 0.5]
+
         trainer.generate_synthetic_examples(
             samples_n=100000,
-            save_path="./data/100000_S%dT%d_scalar3_filtered.npy" % (S_size, T)
+            save_path="./data/100000_S%dT%d_scalar3_filtered.npy" % (S_size, T),
+            domain=domain,
+            prob=prob
         )
 
     elif mode == "train":
@@ -68,7 +78,7 @@ if __name__ == '__main__':
 
         # Load custom tensor if provided
         if args.custom_tensor_path is not None:
-            custom_tensor = np.load(args.custom_tensor_path)
+            custom_tensor = np.load(args.custom_tensor_path, allow_pickle=True)
             print("✅ Loaded custom tensor with shape:", custom_tensor.shape)
         else:
             custom_tensor = None

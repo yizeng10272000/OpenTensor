@@ -148,3 +148,8 @@ def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: Optional[float]
                 Mk = Mk.reshape(Mk.shape[0], -1)
             total += matrix_rank_mod2(Mk)
         return int(total)
+
+
+# ----------------------------
+# 新增 rank_gf2 别名，兼容 Trainer.py
+rank_gf2 = matrix_rank_mod2
