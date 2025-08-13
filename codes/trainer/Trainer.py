@@ -135,85 +135,118 @@ class Trainer():
 
     
     def generate_synthetic_examples(self,
-                                    prob=[.8, .1, .1],
-                                    samples_n=10000,
-                                    R_limit=12,
-                                    save_path=None,
-                                    save_type="traj") -> list:
+                                     prob=[.8, .1, .1],
+                                     samples_n=10000,
+                                     R_limit=12,
+                                     save_path=None,
+                                     save_type="traj",
+                                     domain="R",
+                                     threshold=0.5) -> list:
         '''
         Generate artificially synthesized Tensor examples
-        Return: results
+        domain: "R" (real field) or "GF2" (binary field)
+        threshold: Binarization threshold, only used in GF2 mode
         '''
         assert save_type in ["traj", "tuple"]
-        
         S_size = self.S_size
         coefficients = self.coefficients
         T = self.T
-        
+
+        # GF2 tools
+        if domain == "GF2":
+            from codes.utils.gf2 import to_bin, add_mod2, outer_mod2, rank_gf2
+        else:
+            from codes.utils import outer
+            import numpy as np
+
         total_results = []
         for _ in tqdm(range(samples_n)):
             R = random.randint(1, R_limit)
             for _ in range(10000):
                 sample = np.zeros((S_size, S_size, S_size), dtype=np.int32)
-                states = []        
+                states = []
                 actions = []
-                rewards = []                
-                for r in range(1, (R+1)):
+                rewards = []
+                for r in range(1, (R + 1)):
                     ct = 0
                     while True:
                         u = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
                         v = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
                         w = np.random.choice(coefficients, size=(S_size,), p=prob, replace=True)
+
+                        if domain == "GF2":
+                            u = to_bin(u, threshold)
+                            v = to_bin(v, threshold)
+                            w = to_bin(w, threshold)
+
                         ct += 1
-                        if not is_zero_tensor(outer(u, v, w)):
-                            break
+                        # Non-zero check
+                        if domain == "GF2":
+                            if not np.all(outer_mod2(u, v, w) == 0):
+                                break
+                        else:
+                            if not is_zero_tensor(outer(u, v, w)):
+                                break
                         if ct > 100000:
                             raise Exception("Oh my god...")
-                    sample = sample + outer(u, v, w)
+
+                    # update sample
+                    if domain == "GF2":
+                        sample = add_mod2(sample, outer_mod2(u, v, w))
+                    else:
+                        sample = sample + outer(u, v, w)
+
                     action = np.stack([u, v, w], axis=0)
                     actions.append(canonicalize_action(action))
                     states.append(sample.copy())
                     rewards.append(-r)
-                
-                # Check redundancy.
+
+                # Check redundancy
                 red_flag = False
-                for (i, j) in [[0,1], [1,2], [2,0]]:
+                for (i, j) in [[0, 1], [1, 2], [2, 0]]:
                     _mat = np.zeros((S_size ** 2, R), dtype=np.int32)
                     for idx, action in enumerate(actions):
                         _mat[:, idx] = np.outer(action[i], action[j]).reshape((-1,))
-                    if np.linalg.matrix_rank(_mat) < R:
-                        red_flag = True
-                        break
-                
+                    if domain == "GF2":
+                        if rank_gf2(_mat) < R:
+                            red_flag = True
+                            break
+                    else:
+                        if np.linalg.matrix_rank(_mat) < R:
+                            red_flag = True
+                            break
+
                 if red_flag:
                     continue
                 break
-                
-            # Reformulate the results.
+
+            # Reformulate results
             if save_type == "tuple":
-                states.reverse(); actions.reverse(); rewards.reverse()
+                states.reverse()
+                actions.reverse()
+                rewards.reverse()
                 actions_tensor = [action2tensor(action) for action in actions]
                 for idx, state in enumerate(states):
                     tensors = np.zeros((T, S_size, S_size, S_size), dtype=np.int32)
-                    tensors[0] = state            # state.
+                    tensors[0] = state  # state.
                     if idx != 0:
-                        # History actions.
-                        tensors[1:(idx+1)] = np.stack(reversed(actions_tensor[max(idx-(T-1), 0):idx]), axis=0)        
-                    scalars = np.array([idx, idx, idx])     #FIXME: Havn't decided the scalars.
-                    
+                        tensors[1:(idx + 1)] = np.stack(
+                            reversed(actions_tensor[max(idx - (T - 1), 0):idx]), axis=0
+                        )
+                    scalars = np.array([idx, idx, idx])
                     cur_state = [tensors, scalars]
                     action = actions[idx]
                     reward = rewards[idx]
                     total_results.append([cur_state, action, reward])
-            
             else:
-                traj = [states, actions, rewards]          # Note: Synthesis order...
+                traj = [states, actions, rewards]
                 total_results.append(traj)
-                
+
         if save_path is not None:
             np.save(save_path, np.array(total_results, dtype=object))
-            
+
         return total_results
+
         
     
     def learn_one_batch(self, batch_example):
