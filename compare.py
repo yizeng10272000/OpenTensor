@@ -61,7 +61,7 @@ def run_opentensor(use_projection=True, projection_dim=None, tensor_override=Non
 
     print(f"\n=== Inference [{run_name}] ===")
     t2 = time.time()
-    # 支持传入初始 tensor_override
+    
     trainer.infer(resume=ckpt_path, tensor_override=tensor_override)
     t3 = time.time()
     infer_time = t3 - t2
@@ -139,10 +139,11 @@ if __name__ == "__main__":
     result_no_proj = run_opentensor(use_projection=False)
     results.append(result_no_proj)
 
-    # Run with projection_dim=16
-    result_with_proj = run_opentensor(use_projection=True, projection_dim=16)
-    results.append(result_with_proj)
-
+    # Run with projection
+    for dim in range(16, 61, 4):
+        res = run_opentensor(use_projection=True, projection_dim=dim)
+        results.append(res)
+        
     max_len = 5
     header = (
         ["Run Name", "Use Projection", "Projection Dim",

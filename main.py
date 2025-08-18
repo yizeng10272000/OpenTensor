@@ -54,7 +54,7 @@ if __name__ == '__main__':
     domain = kwargs["env"].get("domain", "R")
 
     if mode == "generate_data":
-        # 如果是 GF2 域，强制概率为 [0.5, 0.5] 避免 ValueError
+        # If the domain is GF2, force the probability to [0.5, 0.5] to avoid ValueError
         prob = None
         if domain == "GF2":
             prob = [0.5, 0.5]

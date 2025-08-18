@@ -6,8 +6,8 @@ from typing import Optional
 
 def to_bin(x, threshold=None):
     """
-    把任意 numpy / torch 张量规约到 {0,1}（按位 mod 2）。
-    浮点数会先二值化（round 或阈值），整型会直接 & 1。
+    Reduce any numpy/torch tensor to {0,1} (bitwise modulo 2).
+    Floating-point numbers are first binarized (rounded or thresholded), while integers are directly & 1.
     """
     if isinstance(x, torch.Tensor):
         if x.dtype.is_floating_point:
@@ -22,8 +22,8 @@ def to_bin(x, threshold=None):
 
 def add_mod2(a, b):
     """
-    GF(2)加法，对应异或操作。
-    支持 numpy 数组或 torch 张量。
+    GF(2) addition, corresponding to the XOR operation.
+    Supports numpy arrays or torch tensors.
     """
     a_bin = to_bin(a)
     b_bin = to_bin(b)
@@ -35,10 +35,10 @@ def add_mod2(a, b):
 
 def outer_mod2(a, b, c=None):
     """
-    GF(2)外积：
-    - 如果 c=None，返回二维外积 a ⊗ b
-    - 如果 c 提供，返回三阶张量外积 a ⊗ b ⊗ c
-    输入向量 a, b, c 可以是 numpy 或 torch 张量。
+    GF(2) outer product:
+    - If c=None, returns the 2D outer product a ⊗ b
+    - If c is provided, returns the 3D tensor outer product a ⊗ b ⊗ c
+    The input vectors a, b, c can be numpy or torch tensors.
     """
     a_bin = to_bin(a).reshape(-1)
     b_bin = to_bin(b).reshape(-1)
@@ -51,16 +51,16 @@ def outer_mod2(a, b, c=None):
     else:
         c_bin = to_bin(c).reshape(-1)
         if isinstance(a_bin, torch.Tensor):
-            # PyTorch 三阶外积
+            # PyTorch third-order outer product
             return (a_bin[:, None, None] & b_bin[None, :, None] & c_bin[None, None, :]).to(torch.uint8)
         else:
-            # NumPy 三阶外积
+            # NumPy third-order outer product
             return np.einsum('i,j,k->ijk', a_bin, b_bin, c_bin) & 1
 
 
 def _to_bin_nd(x, threshold: Optional[float] = None):
     """
-    把任意 numpy / torch 张量规约到 {0,1}（按位 mod 2）。
+    Reduce any numpy/torch tensor to {0,1} (bitwise mod 2).
     """
     return to_bin(x, threshold=threshold)
 
@@ -68,8 +68,8 @@ def _to_bin_nd(x, threshold: Optional[float] = None):
 @torch.no_grad()
 def matrix_rank_mod2(M, threshold: Optional[float] = None) -> int:
     """
-    计算 GF(2) 上的矩阵秩。
-    支持 numpy.ndarray 和 torch.Tensor（二维）。
+    Computes the rank of a matrix over GF(2).
+    Supports numpy.ndarray and torch.Tensor (2D).
     """
     A = _to_bin_nd(M, threshold=threshold)
     if isinstance(A, torch.Tensor):
@@ -118,8 +118,8 @@ def matrix_rank_mod2(M, threshold: Optional[float] = None) -> int:
 
 def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: Optional[float] = None) -> int:
     """
-    计算三阶张量的 “近似终止惩罚”：
-    把张量沿某个轴切成一组矩阵，对每个切片求 GF(2) 秩并累加。
+    Compute the "approximate termination penalty" for a rank-three tensor:
+    Slice the tensor along an axis into a set of matrices, calculate the GF(2) rank of each slice and accumulate them.
     """
     X = _to_bin_nd(tensor, threshold=threshold)
     if isinstance(X, torch.Tensor):
@@ -151,5 +151,5 @@ def terminate_rank_approx_gf2(tensor, axis: int = -1, threshold: Optional[float]
 
 
 # ----------------------------
-# 新增 rank_gf2 别名，兼容 Trainer.py
+# Added rank_gf2 alias, compatible with Trainer.py
 rank_gf2 = matrix_rank_mod2

@@ -31,7 +31,7 @@ class Environment():
         self.domain = domain
         self.threshold = threshold
 
-        # 初始化状态
+        # Initialization state
         if init_state is None:
             init_state = self.get_init_state(S_size)
         self.cur_state = init_state

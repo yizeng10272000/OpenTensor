@@ -106,7 +106,7 @@ class Trainer():
         self.net.to(device)
         self.all_kwargs = all_kwargs
 
-        # 保存额外参数
+        # Save additional parameters
         self.extra_kwargs = kwargs
 
         # Initialize training related indicators
@@ -160,12 +160,12 @@ class Trainer():
         # GF2 tools
         if domain == "GF2":
             from codes.utils.gf2 import to_bin, add_mod2, outer_mod2, rank_gf2
-            coefficients = [0, 1]  # 强制二元
-            prob = [0.5, 0.5]      # 强制匹配
+            coefficients = [0, 1]  # Forced Binary
+            prob = [0.5, 0.5]      # Forced Match
         else:
             from codes.utils import outer
             if prob is None:
-                prob = [0.8, 0.1, 0.1]  # 原本默认
+                prob = [0.8, 0.1, 0.1]  # set possibility 
 
         total_results = []
         for _ in tqdm(range(samples_n)):

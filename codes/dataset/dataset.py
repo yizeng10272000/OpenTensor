@@ -142,8 +142,8 @@ class TupleDataset(Dataset):
                 token = token[::-1]
             for idx, v in enumerate(token):
                 v = int(v)
-                if v == -1:  # 处理 np.int32(-1)
-                    v = 0   # 或根据实际逻辑映射为合法值
+                if v == -1:  # Handling np.int32(-1)
+                    v = 1   # map to a legal value based on actual logic
                 logit += coefficients.index(v) * (len(coefficients) ** idx)
             logits.append(logit)
         return np.array(logits, dtype=np.int32)
